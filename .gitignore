@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+.DS_Store
+# course documents stay private
+*.pdf
+*.docx
