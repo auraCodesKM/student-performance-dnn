@@ -4,3 +4,4 @@ __pycache__/
 # course documents stay private
 *.pdf
 *.docx
+results/*.log
