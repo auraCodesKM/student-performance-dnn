@@ -1,0 +1,24 @@
+{
+  "late": {
+    "n_layers": 3,
+    "width": 64,
+    "dropout": 0.16199217271219457,
+    "batchnorm": true,
+    "lr": 0.0009152887329124827,
+    "weight_decay": 1.7588952092273983e-05,
+    "batch_size": 64,
+    "class_weight": false,
+    "k": 10
+  },
+  "early": {
+    "n_layers": 3,
+    "width": 16,
+    "dropout": 0.1255700596373297,
+    "batchnorm": false,
+    "lr": 0.0013624140903810116,
+    "weight_decay": 0.004701002013683422,
+    "batch_size": 32,
+    "class_weight": true,
+    "k": 20
+  }
+}
