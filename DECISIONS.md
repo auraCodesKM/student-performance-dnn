@@ -67,7 +67,7 @@ The early-warning network: **20 inputs → 16 → 8 → 8 → 1**, no BatchNorm,
 | **Optuna (TPE) over 9 hyperparameters** | Depth 1–3, width, dropout, BatchNorm, learning rate, weight decay, batch size, class weights, k. TPE learns which regions score well and samples there, which beats grid search for this many dimensions. All 80 trials are logged in `results/experiments.csv`. |
 | **PyTorch, not Keras** | Both are in the syllabus. The explicit loop (`zero_grad → forward → loss → backward → step`) shows each step of backpropagation. |
 | **Wrapped as a scikit-learn estimator** | `DNNClassifier` has `fit` / `predict_proba`, so it drops into the same Pipeline, CV and metric code as the baselines. That makes the comparison fair and leakage-safe by construction. |
-| **CPU, not GPU** | Benchmark: 50 epochs took 0.75 s on the M3 CPU and 1.07 s on its GPU (MPS). With batches of 32 rows × at most 45 columns, GPU launch overhead outweighs the maths. A Kaggle GPU would add nothing. |
+| **CPU, not GPU** | Notebook section 6, 50 epochs of the same network: M3 CPU 0.36 s vs M3 GPU (MPS) 1.03 s; Kaggle CPU 1.86 s vs Kaggle Tesla T4 1.92 s. With batches of 32 rows × at most 45 columns, GPU launch overhead outweighs the maths, so the laptop CPU is the fastest option. |
 
 ## 5. What the results mean
 
@@ -79,6 +79,7 @@ The early-warning network: **20 inputs → 16 → 8 → 8 → 1**, no BatchNorm,
 
 - The test set was scored in v1 (single network) before the seed ensemble was added. The change was motivated by the CV standard deviation, not by the test score, and the code was not re-tuned afterwards. v1 DNN test scores: late 0.908 accuracy / 0.830 macro-F1, early 0.731 / 0.607.
 - The research-phase 10-feature check picked features using all 649 rows, so its 92.9% was slightly optimistic. The project selects features inside each fold instead.
+- The notebook was also run on Kaggle, which has different library versions (Python 3.13, torch 2.11, scikit-learn 1.6.1). The DNN's 5-seed test means came out identical (late 0.912 ± 0.004, early 0.803 ± 0.020). Single-model test accuracies moved by at most 3 students: late-term DNN 0.908 (local 0.900), XGBoost 0.877 (local 0.900); early-warning random forest 0.823 (local 0.838). Seeds fix the randomness, but library versions change the floating-point arithmetic slightly. `requirements.txt` pins the versions behind the numbers in this repo.
 - On macOS, importing torch and xgboost in one process crashed (three bundled copies of OpenMP). Setting `OMP_NUM_THREADS=1` at the top of each script fixes it, and single-threaded is fastest on this data anyway.
 
 ## 7. Likely viva questions
@@ -112,6 +113,15 @@ Training and validation loss fall together until about epoch 73. After that, tra
 
 **How confident are you in the 90% test accuracy?**
 The bootstrap 95% interval is 84.6–94.6%, because 130 test students is a small sample. The cross-validation estimate (91.9% over 15 folds) agrees.
+
+**Why PyTorch for the main model and not Keras?**
+Both are in the syllabus, and notebook section 9 builds the same network in Keras: same inputs, layers and hyperparameters, with `EarlyStopping` and `ModelCheckpoint` callbacks. One Keras network scores 0.885 test accuracy, against 0.908 for one PyTorch network. The gap is within the noise of a single random start. PyTorch is the main model because its explicit loop shows every step of backpropagation.
+
+**Why no `DataLoader`?**
+All 519 rows fit in memory as one tensor. Shuffling with `torch.randperm` and slicing batches is what `DataLoader(shuffle=True)` does internally, without the extra worker and collate machinery.
+
+**Can you show what the network actually computes?**
+Notebook section 10 recomputes the saved network's predictions with plain NumPy: `h @ W.T + b`, BatchNorm with the running mean and variance, `max(0, h)`, then the sigmoid. The largest difference from PyTorch is about 1e-7.
 
 **What would improve the early-warning model?**
 More students and more signal: attendance over time, homework records, earlier-year grades. The 30 survey features carry little information about G3, and `failures` alone dominates.

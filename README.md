@@ -28,6 +28,7 @@ Python 3.12 (PyTorch does not support 3.14 yet).
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
+jupyter lab student_performance_dnn.ipynb   # whole project, step by step (~3 min)
 streamlit run app.py          # app, uses the trained models in models/
 
 python -m src.eda             # data audit + figures      (~5 s)
@@ -35,11 +36,15 @@ python -m src.tune            # Optuna search, 40 trials per scenario (~10 min, 
 python -m src.evaluate        # baselines vs DNN, test set, saves models (~1 min)
 ```
 
-All randomness is seeded (`SEED = 42`), so re-running gives the same numbers.
+All randomness is seeded (`SEED = 42`), so re-running with the pinned versions gives the same numbers.
+
+**Kaggle:** the same notebook runs on Kaggle at [kaggle.com/code/kavinthakurkm/student-performance-dnn](https://www.kaggle.com/code/kavinthakurkm/student-performance-dnn) (about 7 minutes; it clones this repo). Kaggle's library versions are different, so single-model scores can shift by a student or two. The DNN's 5-seed means are identical (see `DECISIONS.md`).
 
 ## Project layout
 
 ```
+student_performance_dnn.ipynb   walkthrough notebook: runs every stage below in order, plus a Keras twin,
+                                a NumPy forward pass and a CPU vs GPU benchmark
 data/              UCI Student Performance CSVs + codebook (student.txt)
 src/data.py        load data, define target, locked 80/20 split, preprocessing pipeline
 src/model.py       MLP (nn.Module) + DNNClassifier: training loop, early stopping, seed ensemble
@@ -67,6 +72,9 @@ results/           RESULTS.md, metrics.json, experiments.csv (every tuning trial
 | Accuracy, precision, recall, F1, ROC-AUC, confusion matrix | `src/evaluate.py` |
 | Learning curves, experiment log, reproducibility | `results/figures/learning_curve_*.png`, `results/experiments.csv`, seeds |
 | PyTorch `nn.Module`, training loop, saving/loading | `src/model.py`, `joblib.dump` / `joblib.load` |
+| Keras Sequential API, callbacks (EarlyStopping, ModelCheckpoint), PyTorch vs Keras | notebook section 9 |
+| NumPy forward pass (what a network computes) | notebook section 10 |
+| Jupyter / Kaggle notebooks, GPU vs CPU | `student_performance_dnn.ipynb`, section 6 |
 
 ## Data and limitations
 
