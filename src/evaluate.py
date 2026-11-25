@@ -149,9 +149,10 @@ def evaluate(params, train, test):
 
 def plots(models, test):
     dnn = models[DNN]
-    fig, ax = plt.subplots(figsize=(4.5, 4))
-    ConfusionMatrixDisplay.from_estimator(dnn, test, test["at_risk"], display_labels=["Pass", "At risk"], cmap="Greens", ax=ax)
-    ax.set_title("DNN confusion matrix (locked test set)")
+    fig, ax = plt.subplots(figsize=(4.2, 4))
+    ConfusionMatrixDisplay.from_estimator(dnn, test, test["at_risk"], display_labels=["Pass", "At risk"], cmap="Greens",
+                                          colorbar=False, ax=ax)
+    ax.set_title("DNN confusion matrix (test set)")
     fig.tight_layout(); fig.savefig(f"{FIG}/confusion.png", dpi=150); plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(5.5, 5))

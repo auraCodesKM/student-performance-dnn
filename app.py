@@ -36,6 +36,14 @@ st.markdown("""<style>
   .pass {background: #dcfce7; color: #166534;}
   .risk {background: #fee2e2; color: #991b1b;}
   .muted {color: #71717a; font-size: 0.9rem;}
+  /* keep the result panel in view while scrolling the form (desktop widths only) */
+  @media (min-width: 900px) {
+    div[data-testid="stColumn"]:has(.result-anchor) {position: sticky; top: 3.5rem; align-self: flex-start;}
+  }
+  /* on phones the columns stack: show the result above the long form */
+  @media (max-width: 899px) {
+    div[data-testid="stHorizontalBlock"]:has(.result-anchor) {flex-direction: column-reverse;}
+  }
 </style>""", unsafe_allow_html=True)
 
 
@@ -97,6 +105,7 @@ with predict_tab:
                     student[c] = field(st, c)
 
     with result_col:
+        st.markdown('<div class="result-anchor"></div>', unsafe_allow_html=True)
         with st.container(border=True):
             p = float(risk([student])[0])
             at_risk = p >= THRESHOLD
