@@ -23,7 +23,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (ConfusionMatrixDisplay, RocCurveDisplay, accuracy_score, balanced_accuracy_score,
                              classification_report, confusion_matrix, f1_score, precision_score, recall_score,
-                             roc_auc_score)
+                             make_scorer, roc_auc_score)
 from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold, cross_validate
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
@@ -33,7 +33,8 @@ from src.tune import build_dnn
 
 FIG = "results/figures"
 DNN = "DNN (MLP)"
-SCORING = {"accuracy": "accuracy", "balanced_acc": "balanced_accuracy", "precision_at_risk": "precision",
+SCORING = {"accuracy": "accuracy", "balanced_acc": "balanced_accuracy",
+           "precision_at_risk": make_scorer(precision_score, zero_division=0),  # majority class never predicts "at risk": 0/0 -> 0
            "recall_at_risk": "recall", "f1_macro": "f1_macro", "roc_auc": "roc_auc"}
 
 

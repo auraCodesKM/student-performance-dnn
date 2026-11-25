@@ -56,6 +56,8 @@ def objective(trial, train):
 
 def main():
     train, _ = split(load_data())  # the test set is not used here at all
+    if os.path.exists("results/experiments.csv"):
+        os.remove("results/experiments.csv")  # the log describes the current study only (older logs are in git history)
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=SEED))
     study.optimize(lambda t: objective(t, train), n_trials=N_TRIALS)
     print(f"best CV macro-F1 {study.best_value:.3f} with {study.best_params}")
