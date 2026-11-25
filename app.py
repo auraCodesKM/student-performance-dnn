@@ -1,6 +1,8 @@
-"""Streamlit app: enter a student's details, get the DNN's predicted performance category.
+"""Streamlit app: enter a student's details and get the DNN's prediction, Pass or At risk.
 
 Run:  streamlit run app.py
+The app never trains anything. It loads models/dnn.joblib, the full fitted pipeline (encoder, scaler, feature
+selector and the 5-network ensemble) saved by src/evaluate.py, so inference uses exactly the training preprocessing.
 """
 import json
 
@@ -8,116 +10,164 @@ import joblib
 import pandas as pd
 import streamlit as st
 
-import src.model  # noqa: F401  (the saved pipelines contain DNNClassifier, so its module must be importable)
-from src.data import DATA_PATH, load_data
+import src.model  # noqa: F401  (the saved pipeline contains DNNClassifier, so its module must be importable)
+from src.data import CATEGORICAL, DESCRIPTIONS, FEATURES, GROUPS, load_data, split
 
-SCENARIOS = {
-    "Early warning: start of year, no grades yet": "early",
-    "Late term: after the 2nd grading period (uses G1, G2)": "late",
+THRESHOLD = 0.5
+LEVEL_1_5 = {1: "1 · very low", 2: "2 · low", 3: "3 · medium", 4: "4 · high", 5: "5 · very high"}
+CHOICES = {  # readable labels for coded values (data/student.txt)
+    "school": {"GP": "Gabriel Pereira", "MS": "Mousinho da Silveira"}, "sex": {"F": "Female", "M": "Male"},
+    "address": {"U": "Urban", "R": "Rural"}, "famsize": {"LE3": "3 or fewer", "GT3": "More than 3"},
+    "Pstatus": {"T": "Living together", "A": "Apart"},
+    "Medu": {0: "None", 1: "Primary (4th grade)", 2: "5th–9th grade", 3: "Secondary", 4: "Higher education"},
+    "traveltime": {1: "< 15 min", 2: "15–30 min", 3: "30 min – 1 h", 4: "> 1 h"},
+    "studytime": {1: "< 2 h / week", 2: "2–5 h / week", 3: "5–10 h / week", 4: "> 10 h / week"},
+    "famrel": LEVEL_1_5, "freetime": LEVEL_1_5, "goout": LEVEL_1_5, "Dalc": LEVEL_1_5, "Walc": LEVEL_1_5,
+    "health": {1: "1 · very bad", 2: "2 · bad", 3: "3 · fair", 4: "4 · good", 5: "5 · very good"},
 }
-LEVEL_1_5 = {1: "1 - very low", 2: "2 - low", 3: "3 - medium", 4: "4 - high", 5: "5 - very high"}
-EDU = {0: "None", 1: "Primary (4th grade)", 2: "5th-9th grade", 3: "Secondary", 4: "Higher education"}
-TRAVEL = {1: "< 15 min", 2: "15-30 min", 3: "30 min - 1 h", 4: "> 1 h"}
-STUDY = {1: "< 2 h", 2: "2-5 h", 3: "5-10 h", 4: "> 10 h"}
+CHOICES["Fedu"] = CHOICES["Medu"]
+SLIDERS = {"age": (15, 22), "G1": (0, 20), "G2": (0, 20), "failures": (0, 3)}  # codebook ranges
+
+st.set_page_config(page_title="Student Performance Predictor", layout="wide")
+st.markdown("""<style>
+  .block-container {padding-top: 2rem; max-width: 1200px;}
+  h1 {font-weight: 650; letter-spacing: -0.02em;}
+  .badge {display: inline-block; padding: 0.35rem 0.8rem; border-radius: 6px; font-weight: 650; font-size: 1.6rem; letter-spacing: 0.02em;}
+  .pass {background: #dcfce7; color: #166534;}
+  .risk {background: #fee2e2; color: #991b1b;}
+  .muted {color: #71717a; font-size: 0.9rem;}
+</style>""", unsafe_allow_html=True)
 
 
 @st.cache_resource
-def load(scenario):
-    return joblib.load(f"models/dnn_{scenario}.joblib")
+def load_model():
+    return joblib.load("models/dnn.joblib")
 
 
 @st.cache_data
-def defaults():
-    df = load_data(DATA_PATH)
-    return df, json.load(open("results/metrics.json"))
+def load_reference():
+    train, _ = split(load_data())  # same 519 training students the model learned from
+    with open("results/metrics.json") as f:
+        metrics = json.load(f)
+    return train, metrics
 
 
-st.set_page_config(page_title="Student Performance Predictor", page_icon="🎓", layout="wide")
+model = load_model()
+train, metrics = load_reference()
+dnn = metrics["dnn"]
+# Map the encoded columns the model kept (e.g. "school_MS") back to the raw inputs they came from ("school").
+used = [c for c in FEATURES if any(n == c or n.startswith(c + "_") for n in dnn["selected_features"])]
+typical = {c: train[c].mode()[0] if c in CATEGORICAL else int(train[c].median()) for c in FEATURES}
+
+
+def field(container, name):
+    """One input widget, pre-filled with the most typical value among training students."""
+    label = DESCRIPTIONS[name] + (" ·  used by model" if name in used else "")
+    if name in SLIDERS:
+        return container.slider(label, *SLIDERS[name], typical[name], key=name)
+    if name == "absences":
+        return container.number_input(label, 0, 93, typical[name], key=name)  # codebook allows 0-93
+    options = sorted(train[name].unique())
+    fmt = CHOICES.get(name, {}).get
+    return container.selectbox(label, options, index=options.index(typical[name]), key=name,
+                               format_func=lambda v: fmt(v) or str(v).replace("_", " ").capitalize())
+
+
+def risk(rows):
+    """P(at risk) for one or more students; columns are put in the exact training order."""
+    return model.predict_proba(pd.DataFrame(rows)[FEATURES])[:, 1]
+
+
 st.title("Student Performance Predictor")
-st.caption("Deep neural network (PyTorch MLP) trained on 649 Portuguese secondary-school students (UCI Student Performance). "
-           "Predicts whether the final grade G3 will be below 10/20 (at risk) or not.")
+st.markdown('<p class="muted">Predicts whether a Portuguese secondary-school student will pass the year '
+            '(final grade G3 ≥ 10 / 20) or is at risk of failing, from demographic, academic, social and behavioural data.</p>',
+            unsafe_allow_html=True)
 
-df, metrics = defaults()
-label = st.radio("When are you predicting?", list(SCENARIOS), horizontal=True)
-scenario = SCENARIOS[label]
+predict_tab, model_tab, about_tab = st.tabs(["Predict", "Model performance", "About"])
 
+with predict_tab:
+    form_col, result_col = st.columns([3, 2], gap="large")
+    student = {}
+    with form_col:
+        top, bottom = st.columns(2), st.columns(2)
+        for box, (group, cols) in zip([*top, *bottom], GROUPS.items()):
+            with box.container(border=True):
+                st.markdown(f"**{group}**")
+                for c in cols:
+                    student[c] = field(st, c)
 
-def pick(col, name, options=None, fmt=None):
-    """Dropdown pre-filled with the most common value in the dataset."""
-    options = options or sorted(df[name].unique())
-    mode = df[name].mode()[0]
-    return col.selectbox(name, options, index=list(options).index(mode), format_func=fmt or str, key=name)
+    with result_col:
+        with st.container(border=True):
+            p = float(risk([student])[0])
+            at_risk = p >= THRESHOLD
+            st.markdown("Prediction")
+            st.markdown(f'<span class="badge {"risk" if at_risk else "pass"}">{"AT RISK" if at_risk else "PASS"}</span>',
+                        unsafe_allow_html=True)
+            st.markdown(f"Estimated probability of failing: **{p:.0%}**  \n"
+                        f'<span class="muted">Decision cut-off {THRESHOLD:.0%}. '
+                        f"{'Close to the cut-off: treat as uncertain.' if abs(p - THRESHOLD) < 0.15 else ''}</span>",
+                        unsafe_allow_html=True)
+            st.progress(p)
+            if student["absences"] > train["absences"].max():
+                st.warning(f"Absences above {train['absences'].max()} were never seen in training, so this estimate is less reliable.")
 
+        with st.container(border=True):
+            st.markdown("**Why this result**")
+            # Occlusion: put each input the model uses back to a typical value and see how the risk changes.
+            changed = [c for c in used if student[c] != typical[c]]
+            effects = dict(zip(changed, p - risk([student | {c: typical[c]} for c in changed]))) if changed else {}
+            shown = sorted(effects.items(), key=lambda kv: -abs(kv[1]))[:4]
+            if not shown:
+                st.markdown("Every input the model relies on is at the typical training value.")
+            for c, delta in shown:
+                arrow = "raises" if delta > 0 else "lowers"
+                st.markdown(f"- **{DESCRIPTIONS[c]}** = {student[c]} (typical {typical[c]}) {arrow} the risk by {abs(delta):.0%}")
+            st.markdown('<span class="muted">Each line replaces one input with the typical training value and measures how much '
+                        'the predicted risk moves. Grades G1 and G2 usually dominate.</span>', unsafe_allow_html=True)
 
-with st.form("student"):
-    a, b, c, d = st.columns(4)
-    a.subheader("Student")
-    row = {
-        "school": pick(a, "school", fmt={"GP": "Gabriel Pereira", "MS": "Mousinho da Silveira"}.get),
-        "sex": pick(a, "sex"),
-        "age": a.slider("age", 15, 22, 17),
-        "address": pick(a, "address", fmt={"U": "Urban", "R": "Rural"}.get),
-        "higher": pick(a, "higher"),
-        "romantic": pick(a, "romantic"),
-        "health": pick(a, "health", list(LEVEL_1_5), LEVEL_1_5.get),
-    }
-    b.subheader("Family")
-    row |= {
-        "famsize": pick(b, "famsize", fmt={"LE3": "3 or fewer", "GT3": "more than 3"}.get),
-        "Pstatus": pick(b, "Pstatus", fmt={"T": "Living together", "A": "Apart"}.get),
-        "Medu": pick(b, "Medu", list(EDU), EDU.get),
-        "Fedu": pick(b, "Fedu", list(EDU), EDU.get),
-        "Mjob": pick(b, "Mjob"),
-        "Fjob": pick(b, "Fjob"),
-        "guardian": pick(b, "guardian"),
-        "famrel": pick(b, "famrel", list(LEVEL_1_5), LEVEL_1_5.get),
-        "famsup": pick(b, "famsup"),
-    }
-    c.subheader("School")
-    row |= {
-        "reason": pick(c, "reason"),
-        "traveltime": pick(c, "traveltime", list(TRAVEL), TRAVEL.get),
-        "studytime": pick(c, "studytime", list(STUDY), STUDY.get),
-        "failures": c.slider("failures (past classes failed)", 0, 3, 0),
-        "absences": c.number_input("absences", 0, 93, 2),
-        "schoolsup": pick(c, "schoolsup"),
-        "paid": pick(c, "paid"),
-        "activities": pick(c, "activities"),
-        "nursery": pick(c, "nursery"),
-    }
-    d.subheader("Lifestyle")
-    row |= {
-        "internet": pick(d, "internet"),
-        "freetime": pick(d, "freetime", list(LEVEL_1_5), LEVEL_1_5.get),
-        "goout": pick(d, "goout", list(LEVEL_1_5), LEVEL_1_5.get),
-        "Dalc": pick(d, "Dalc", list(LEVEL_1_5), LEVEL_1_5.get),
-        "Walc": pick(d, "Walc", list(LEVEL_1_5), LEVEL_1_5.get),
-    }
-    if scenario == "late":
-        d.subheader("Grades so far")
-        row |= {"G1": d.slider("G1 (1st period, 0-20)", 0, 20, 11), "G2": d.slider("G2 (2nd period, 0-20)", 0, 20, 11)}
-    submitted = st.form_submit_button("Predict", type="primary")
+        st.caption(f"The model uses {len(used)} of the 32 inputs: {', '.join(used)}. The others are shown for completeness.")
 
-if submitted:
-    p = load(scenario).predict_proba(pd.DataFrame([row]))[0, 1]
-    left, right = st.columns([1, 2])
-    if p >= 0.5:
-        left.error(f"### At risk\nLikely final grade below 10/20")
-    else:
-        left.success(f"### On track\nLikely final grade 10/20 or above")
-    left.metric("Probability of being at risk", f"{p:.0%}")
-    right.progress(float(p), text="Risk score (0% = safe, 100% = certain fail). The cut-off is 50%.")
+with model_tab:
+    r = metrics["models"]["DNN (MLP)"]
+    (tn, fp), (fn, tp) = dnn["confusion_matrix"]
+    lo, hi = dnn["wilson_95ci_accuracy"]
+    st.markdown("Scores on **130 locked test students** the model never saw during training, tuning or model selection.")
+    k = st.columns(5)
+    k[0].metric("Accuracy", f"{r['test_accuracy']:.1%}", help=f"95% interval {lo:.1%}–{hi:.1%}")
+    k[1].metric("Precision (at risk)", f"{r['test_precision_at_risk']:.1%}", help="Of students flagged at risk, share who really failed")
+    k[2].metric("Recall (at risk)", f"{r['test_recall_at_risk']:.1%}", help="Of students who really failed, share the model flagged")
+    k[3].metric("Macro-F1", f"{r['test_f1_macro']:.3f}")
+    k[4].metric("ROC-AUC", f"{r['test_roc_auc']:.3f}")
+    st.markdown(f"Confusion matrix: **{tp}** at-risk students caught, **{fn}** missed, **{fp}** false alarms, **{tn}** passes correctly predicted. "
+                f"Over 5 retrained copies the test accuracy is {dnn['seed_mean']['accuracy']:.1%} ± {dnn['seed_std']['accuracy']:.1%}. "
+                "Predicting 'pass' for everyone would already score 84.6%, so recall and macro-F1 matter more than accuracy.")
+    left, right = st.columns(2)
+    left.image("results/figures/confusion.png", width=380)
+    right.image("results/figures/roc.png", width=420)
 
-rows, extra = metrics[scenario]
-m = rows["DNN (MLP)"]
-with st.expander("How reliable is this model?"):
-    st.write(f"Scores on 130 held-out students the model never saw during training or tuning:")
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Accuracy", f"{m['test_accuracy']:.1%}")
-    k2.metric("Macro-F1", f"{m['test_f1_macro']:.3f}")
-    k3.metric("At-risk recall", f"{m['test_recall_at_risk']:.0%}", help="Share of truly at-risk students the model flags")
-    k4.metric("ROC-AUC", f"{m['test_roc_auc']:.3f}")
-    st.caption(f"Always predicting 'pass' would already score 84.6% accuracy, so judge the model on macro-F1 and recall. "
-               f"Features used by this model: {', '.join(extra['selected_features'])}.")
-    if scenario == "early":
-        st.warning("Without any grades the signal is weak. Treat this as a prompt for a conversation, not a verdict.")
+    st.markdown("**Comparison with traditional machine learning** (same preprocessing, same cross-validation)")
+    names = {"cv_accuracy": "CV accuracy", "cv_f1_macro": "CV macro-F1", "test_accuracy": "Test accuracy",
+             "test_recall_at_risk": "Test recall", "test_f1_macro": "Test macro-F1", "test_roc_auc": "Test ROC-AUC"}
+    st.dataframe(pd.DataFrame(metrics["models"]).T[list(names)].rename(columns=names).style.format("{:.3f}"),
+                 width="stretch")
+    st.markdown("**Architecture**  \n"
+                f"{len(dnn['selected_features'])} inputs → " + " → ".join(str(u) for u in model.named_steps["model"].hidden)
+                + " → 1 output. Each hidden layer: Linear → BatchNorm → ReLU → Dropout. "
+                "He initialisation, binary cross-entropy, AdamW, early stopping, average of 5 networks. Tuned with Optuna.")
+
+with about_tab:
+    st.markdown("""
+**Project.** Student Academic Performance Prediction using Deep Neural Networks. Course 24CAI0306 Deep Neural Networks,
+B.E. CSE-AIML, Semester 5. Author: Kavin Thakur.
+
+**Data.** UCI Student Performance dataset, Portuguese course: 649 students from two secondary schools in Portugal, 2005–06
+(P. Cortez and A. Silva, 2008; CC BY 4.0). Target: at risk if the final grade G3 is below 10 out of 20.
+
+**Method.** Stratified 80/20 split with the test set locked. One-hot encoding and standardisation, mutual-information
+feature selection and a PyTorch multilayer perceptron, all fitted inside one scikit-learn pipeline on training data only.
+Hyperparameters tuned with Optuna by cross-validation, then compared with a naive rule, logistic regression,
+random forest and XGBoost.
+
+**Use responsibly.** The model was trained on two schools in one year and includes sensitive attributes. It is a prompt for
+a conversation with a student, not a decision about them. Source code and documentation: github.com/auraCodesKM/student-performance-dnn.
+""")

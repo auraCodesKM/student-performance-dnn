@@ -7,40 +7,40 @@ Portuguese dataset, 649 students. Target: at risk = G3 < 10. 519 training studen
 |---|---|---|---|---|---|---|---|---|---|
 | Majority class | 0.846 ± 0.001 | 0.458 ± 0.000 | 0.000 | 0.500 | 0.846 | 0.000 | 0.000 | 0.458 | 0.500 |
 | Naive rule (G2 < 10) | 0.896 ± 0.031 | 0.831 ± 0.046 | 0.887 | 0.963 | 0.900 | 0.621 | 0.900 | 0.837 | 0.953 |
-| Logistic regression | 0.912 ± 0.027 | 0.851 ± 0.043 | 0.883 | 0.969 | 0.892 | 0.600 | 0.900 | 0.827 | 0.946 |
+| Logistic regression | 0.934 ± 0.027 | 0.870 ± 0.056 | 0.771 | 0.970 | 0.900 | 0.652 | 0.750 | 0.819 | 0.944 |
 | Random forest | 0.921 ± 0.029 | 0.867 ± 0.045 | 0.908 | 0.974 | 0.862 | 0.531 | 0.850 | 0.784 | 0.946 |
 | XGBoost | 0.929 ± 0.023 | 0.866 ± 0.045 | 0.804 | 0.971 | 0.900 | 0.640 | 0.800 | 0.825 | 0.925 |
-| DNN (MLP) | 0.919 ± 0.036 | 0.835 ± 0.077 | 0.679 | 0.967 | 0.900 | 0.652 | 0.750 | 0.819 | 0.953 |
+| DNN (MLP) | 0.925 ± 0.027 | 0.846 ± 0.051 | 0.671 | 0.971 | 0.915 | 0.714 | 0.750 | 0.841 | 0.953 |
 
 ## DNN on the locked test set
 
-- Saved model (used by the app): accuracy 0.900, Wilson 95% CI 0.836–0.941, bootstrap 95% CI 0.846–0.946.
-- 5 retrained copies (seeds 0, 100, 200, 300, 400): accuracy 0.912 ± 0.004, macro-F1 0.843 ± 0.009. This spread measures only the random start, not the small test set.
-- Confusion matrix: 102 true pass, 8 false alarms, 5 missed at-risk, 15 caught at-risk.
+- Saved model (used by the app): accuracy 0.915, Wilson 95% CI 0.855–0.952, bootstrap 95% CI 0.862–0.954.
+- 5 retrained copies (seeds 0, 100, 200, 300, 400): accuracy 0.923 ± 0.008, macro-F1 0.850 ± 0.017. This spread measures only the random start, not the small test set.
+- Confusion matrix: 104 true pass, 6 false alarms, 5 missed at-risk, 15 caught at-risk.
 
 ```
               precision    recall  f1-score   support
 
-        Pass      0.953     0.927     0.940       110
-     At risk      0.652     0.750     0.698        20
+        Pass      0.954     0.945     0.950       110
+     At risk      0.714     0.750     0.732        20
 
-    accuracy                          0.900       130
-   macro avg      0.803     0.839     0.819       130
-weighted avg      0.907     0.900     0.903       130
+    accuracy                          0.915       130
+   macro avg      0.834     0.848     0.841       130
+weighted avg      0.917     0.915     0.916       130
 ```
 
 McNemar exact test, DNN vs each model on the same 130 students (p < 0.05 would mean a real difference):
 
 | Compared with | Only DNN right | Only other right | p-value |
 |---|---|---|---|
-| Majority class | 15 | 8 | 0.210 |
-| Naive rule (G2 < 10) | 5 | 5 | 1.000 |
-| Logistic regression | 5 | 4 | 1.000 |
-| Random forest | 7 | 2 | 0.180 |
-| XGBoost | 3 | 3 | 1.000 |
+| Majority class | 15 | 6 | 0.078 |
+| Naive rule (G2 < 10) | 6 | 4 | 0.754 |
+| Logistic regression | 6 | 4 | 0.754 |
+| Random forest | 9 | 2 | 0.065 |
+| XGBoost | 5 | 3 | 0.727 |
 
-Selected features (10): school_MS, Pstatus_T, schoolsup_yes, higher_yes, Fedu, studytime, failures, famrel, G1, G2.
-Hyperparameters: `{'n_layers': 3, 'width': 64, 'dropout': 0.16199217271219457, 'batchnorm': True, 'lr': 0.0009152887329124827, 'weight_decay': 1.7588952092273983e-05, 'batch_size': 64, 'class_weight': False, 'k': 10}`; best epoch 73.
+Selected features (10): school_MS, higher_yes, Medu, Fedu, studytime, failures, famrel, absences, G1, G2.
+Hyperparameters: `{'n_layers': 2, 'width': 16, 'dropout': 0.47863507341115996, 'batchnorm': True, 'lr': 0.001996353900698521, 'weight_decay': 0.00843330780209246, 'batch_size': 32, 'class_weight': False, 'k': 10}`; best epoch 176.
 
 ![confusion](figures/confusion.png) ![roc](figures/roc.png)
 ![learning curve](figures/learning_curve.png)

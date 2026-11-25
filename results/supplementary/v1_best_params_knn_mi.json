@@ -1,0 +1,11 @@
+{
+  "n_layers": 3,
+  "width": 64,
+  "dropout": 0.16199217271219457,
+  "batchnorm": true,
+  "lr": 0.0009152887329124827,
+  "weight_decay": 1.7588952092273983e-05,
+  "batch_size": 64,
+  "class_weight": false,
+  "k": 10
+}

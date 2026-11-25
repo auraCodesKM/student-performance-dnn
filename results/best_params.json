@@ -1,11 +1,11 @@
 {
-  "n_layers": 3,
-  "width": 64,
-  "dropout": 0.16199217271219457,
+  "n_layers": 2,
+  "width": 16,
+  "dropout": 0.47863507341115996,
   "batchnorm": true,
-  "lr": 0.0009152887329124827,
-  "weight_decay": 1.7588952092273983e-05,
-  "batch_size": 64,
+  "lr": 0.001996353900698521,
+  "weight_decay": 0.00843330780209246,
+  "batch_size": 32,
   "class_weight": false,
   "k": 10
 }

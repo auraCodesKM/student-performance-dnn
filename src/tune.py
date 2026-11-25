@@ -1,6 +1,6 @@
 """Hyperparameter search for the DNN with Optuna, using cross-validation on the training set only.
 
-Run:  python -m src.tune            (about 5 minutes on a laptop CPU)
+Run:  python -m src.tune            (about 10 minutes on a laptop CPU)
 Writes results/best_params.json and logs every trial to results/experiments.csv.
 """
 import os
@@ -12,7 +12,7 @@ from datetime import datetime
 
 import optuna
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.model_selection import RepeatedStratifiedKFold, cross_val_score
 from sklearn.pipeline import Pipeline
 
 from src.data import SEED, load_data, make_preprocessor, split
@@ -42,7 +42,8 @@ def objective(trial, train):
         "class_weight": trial.suggest_categorical("class_weight", [True, False]),
         "k": trial.suggest_categorical("k", [10, 15, 20, "all"]),
     }
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    # 5-fold x 2 repeats: averaging 10 folds makes each trial's score less dependent on one lucky split.
+    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=2, random_state=SEED)
     # Macro-F1 averages F1 of both classes, so ignoring the rare "at risk" class is punished (accuracy would not punish it).
     # Tuning trains 1 network per fold (5x faster); the final model averages 5 (see DNNClassifier).
     scores = cross_val_score(build_dnn(params, n_models=1), train, train["at_risk"], cv=cv, scoring="f1_macro", n_jobs=-1)

@@ -4,7 +4,7 @@ Everything that learns from data (scaler, one-hot encoder, feature selector)
 lives inside a scikit-learn Pipeline, so it is fitted on training rows only.
 That is the main guard against data leakage.
 """
-from functools import partial
+import warnings
 
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -71,6 +71,18 @@ def split(df):
     return train_test_split(df, test_size=0.2, stratify=df["at_risk"], random_state=SEED)
 
 
+def discrete_mi(X, y):
+    """Mutual information between each input column and the target, treating every column as discrete.
+
+    Every input here is an integer code, a 0/1 flag or a whole-number grade, so MI is computed from counts
+    (a contingency table), not from the k-nearest-neighbour estimator meant for continuous data. Standardising
+    does not change the distinct values, only relabels them, so MI is the same before and after scaling.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # sklearn warns that scaled codes "look continuous"; they are still discrete
+        return mutual_info_classif(X, y, discrete_features=True)
+
+
 def make_preprocessor(k="all"):
     """One-hot encode categoricals, standardise numerics, then optionally keep the k most informative features.
 
@@ -82,5 +94,5 @@ def make_preprocessor(k="all"):
         ("num", StandardScaler(), NUMERIC + GRADES),
     ], verbose_feature_names_out=False).set_output(transform="pandas")  # keep column names so selected features are readable
     # Columns not listed (G3 and at_risk) are dropped by the transformer (remainder='drop'), so the target can't leak in.
-    select = SelectKBest(partial(mutual_info_classif, random_state=SEED), k=k)
+    select = SelectKBest(discrete_mi, k=k)
     return [("encode", encode), ("select", select)]
