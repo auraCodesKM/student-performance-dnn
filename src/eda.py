@@ -7,7 +7,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from src.data import CATEGORICAL, NUMERIC, load_data
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import RepeatedStratifiedKFold
+from sklearn.pipeline import Pipeline
+
+from src.data import CATEGORICAL, DESCRIPTIONS, FEATURES, GRADES, GROUPS, NUMERIC, load_data, make_preprocessor, split
 
 FIG = "results/figures"
 
@@ -64,6 +69,38 @@ def figures(df):
     ax.hist(df.absences, bins=32, color="#2a78d6")
     ax.set(xlabel="Absences", ylabel="Students", title=f"Absences (skew {df.absences.skew():.1f})")
     fig.tight_layout(); fig.savefig(f"{FIG}/absences.png", dpi=150); plt.close(fig)
+
+
+def feature_audit(train, k=10):
+    """One row per input column: what it is, how it is encoded, how strongly it relates to G3, and how often
+    SelectKBest keeps it across the same 15 CV folds used in evaluation. Uses training rows only."""
+    group = {c: g for g, cols in GROUPS.items() for c in cols}
+    counts = pd.Series(0, index=FEATURES)
+    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=7)
+    for fold, _ in cv.split(train, train.at_risk):
+        part = train.iloc[fold]
+        kept = Pipeline(make_preprocessor(k)).fit(part, part.at_risk).named_steps["select"].get_feature_names_out()
+        for c in FEATURES:  # a one-hot column such as "Mjob_teacher" counts for its original column "Mjob"
+            counts[c] += any(name == c or name.startswith(c + "_") for name in kept)
+    final = Pipeline(make_preprocessor(k)).fit(train, train.at_risk).named_steps["select"].get_feature_names_out()
+    rows = []
+    for c in FEATURES:
+        numeric = c in NUMERIC + GRADES
+        rho = train[c].corr(train.G3, method="spearman") if numeric else np.nan
+        rates = train.groupby(c).at_risk.mean()  # for categoricals: gap between the riskiest and safest category
+        rows.append({"feature": c, "description": DESCRIPTIONS[c], "group": group[c],
+                     "type": "grade" if c in GRADES else "numeric/ordinal" if numeric else "categorical",
+                     "encoding": "standardised" if numeric else ("one 0/1 column" if train[c].nunique() == 2 else f"one-hot ({train[c].nunique()} columns)"),
+                     "spearman_with_G3": rho, "at_risk_rate_gap": np.nan if numeric else rates.max() - rates.min(),
+                     "kept_in_folds": f"{counts[c]}/15", "in_final_model": any(n == c or n.startswith(c + "_") for n in final)})
+    return pd.DataFrame(rows).sort_values("kept_in_folds", key=lambda s: s.str.split("/").str[0].astype(int), ascending=False)
+
+
+def vif(train):
+    """Variance inflation factor of each numeric input: 1 / (1 - R^2) when that column is regressed on the others.
+    The diagonal of the inverse correlation matrix gives all of them at once. Above ~5 means strong multicollinearity."""
+    corr = train[NUMERIC + GRADES].corr().to_numpy()
+    return pd.Series(np.diag(np.linalg.inv(corr)), index=NUMERIC + GRADES).sort_values(ascending=False)
 
 
 if __name__ == "__main__":

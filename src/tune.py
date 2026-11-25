@@ -1,6 +1,6 @@
 """Hyperparameter search for the DNN with Optuna, using cross-validation on the training set only.
 
-Run:  python -m src.tune            (about 10 minutes on a laptop CPU)
+Run:  python -m src.tune            (about 5 minutes on a laptop CPU)
 Writes results/best_params.json and logs every trial to results/experiments.csv.
 """
 import os
@@ -21,16 +21,16 @@ from src.model import DNNClassifier
 N_TRIALS = 40
 
 
-def build_dnn(params, scenario, n_models=5):
+def build_dnn(params, n_models=5):
     """Turn a flat dict of hyperparameters into preprocessing + DNN pipeline."""
     hidden = tuple(max(8, params["width"] // 2**i) for i in range(params["n_layers"]))  # funnel shape, e.g. 64 -> 32 -> 16
     dnn = DNNClassifier(hidden=hidden, dropout=params["dropout"], batchnorm=params["batchnorm"], lr=params["lr"],
                         weight_decay=params["weight_decay"], batch_size=params["batch_size"],
                         class_weight=params["class_weight"], n_models=n_models)
-    return Pipeline(make_preprocessor(scenario, params["k"]) + [("model", dnn)])
+    return Pipeline(make_preprocessor(params["k"]) + [("model", dnn)])
 
 
-def objective(trial, scenario, train):
+def objective(trial, train):
     params = {
         "n_layers": trial.suggest_int("n_layers", 1, 3),
         "width": trial.suggest_categorical("width", [16, 32, 64, 128]),
@@ -45,8 +45,8 @@ def objective(trial, scenario, train):
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
     # Macro-F1 averages F1 of both classes, so ignoring the rare "at risk" class is punished (accuracy would not punish it).
     # Tuning trains 1 network per fold (5x faster); the final model averages 5 (see DNNClassifier).
-    scores = cross_val_score(build_dnn(params, scenario, n_models=1), train, train["at_risk"], cv=cv, scoring="f1_macro", n_jobs=-1)
-    log = {"time": datetime.now().isoformat(timespec="seconds"), "scenario": scenario, "trial": trial.number,
+    scores = cross_val_score(build_dnn(params, n_models=1), train, train["at_risk"], cv=cv, scoring="f1_macro", n_jobs=-1)
+    log = {"time": datetime.now().isoformat(timespec="seconds"), "trial": trial.number,
            **params, "cv_f1_macro": scores.mean(), "cv_f1_std": scores.std()}
     pd.DataFrame([log]).to_csv("results/experiments.csv", mode="a", index=False,
                                header=not os.path.exists("results/experiments.csv"))
@@ -55,14 +55,11 @@ def objective(trial, scenario, train):
 
 def main():
     train, _ = split(load_data())  # the test set is not used here at all
-    best = {}
-    for scenario in ["late", "early"]:
-        study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=SEED))
-        study.optimize(lambda t: objective(t, scenario, train), n_trials=N_TRIALS)
-        best[scenario] = study.best_params
-        print(f"{scenario}: best CV macro-F1 {study.best_value:.3f} with {study.best_params}")
+    study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=SEED))
+    study.optimize(lambda t: objective(t, train), n_trials=N_TRIALS)
+    print(f"best CV macro-F1 {study.best_value:.3f} with {study.best_params}")
     with open("results/best_params.json", "w") as f:
-        json.dump(best, f, indent=2)
+        json.dump(study.best_params, f, indent=2)
 
 
 if __name__ == "__main__":
