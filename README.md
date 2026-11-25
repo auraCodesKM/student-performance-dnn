@@ -84,7 +84,7 @@ G1 and G2 are the 1st and 2nd period grades. They are known before G3, so using 
 | App | Streamlit 1.67 |
 | Notebook | Jupyter, Kaggle |
 
-Python 3.12. All versions are pinned in `requirements.txt`. Everything runs on a laptop CPU. A GPU is slower for a network this small (notebook section 16).
+Python 3.12. All versions are pinned in `requirements.txt`. Everything runs on a laptop CPU. A GPU is slower for a network this small: 50 epochs take 0.25 s on the M3 CPU vs 0.74 s on its GPU, and 1.66 s on Kaggle's CPU vs 1.81 s on its Tesla T4 (notebook section 16).
 
 ## Repository structure
 
@@ -137,7 +137,7 @@ python -m src.eda         # data audit + EDA figures
 python -m src.numpy_mlp   # gradient-check self-test of the NumPy network
 ```
 
-**Reproducibility.** All randomness is seeded. A fresh clone with a new virtual environment reproduced `best_params.json` and every number in `metrics.json` exactly. On Kaggle, where the library versions differ, single-model scores can shift by a student or two.
+**Reproducibility.** All randomness is seeded. A fresh clone with a new virtual environment reproduced `best_params.json` and every number in `metrics.json` exactly. On Kaggle (Python 3.13, different library versions) the DNN's results were identical; XGBoost's test accuracy moved by 3 students (0.877).
 
 **On Kaggle:** open the notebook link above and choose *Copy & Edit*. The first cell clones this repository; internet access must be on. The notebook runs on CPU or GPU.
 

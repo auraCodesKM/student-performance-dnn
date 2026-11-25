@@ -491,7 +491,7 @@ data/student-por.csv  (649 rows, 33 columns)
 - **What.** Everything runs on the CPU.
 - **Evidence** (notebook section 16, 50 epochs of the final network):
   - MacBook Air M3: CPU 0.25 s vs Apple GPU (MPS) 0.74 s.
-  - Kaggle, v1 network (64-32-16): CPU 1.86 s vs Tesla T4 1.92 s.
+  - Kaggle: CPU 1.66 s vs NVIDIA Tesla T4 GPU 1.81 s.
 - **Why.**
   - Each step multiplies a 32 × 10 batch by a 10 × 16 matrix, a few thousand operations.
   - Launching a GPU kernel and copying data costs more than the maths itself; GPUs pay off with large matrices such as images and big batches.
@@ -526,7 +526,7 @@ data/student-por.csv  (649 rows, 33 columns)
 - **Experiment log.** Every Optuna trial is logged. The previous versions' logs and metrics are kept in `results/supplementary/`, and the early-warning version at git tag `v1-two-scenarios`.
 - **Checks.**
   - A fresh clone with a new virtual environment reproduces `best_params.json` and `metrics.json` exactly (see the README).
-  - The notebook runs end to end locally and on Kaggle. Different library versions on Kaggle can move single-model test scores by one or two students.
+  - The notebook runs end to end locally and on Kaggle (Python 3.13, torch 2.11, scikit-learn 1.6.1). On Kaggle the DNN's results were identical: test 0.915, 5 seeds 0.923 ± 0.008. XGBoost moved from 0.900 to 0.877 (3 students), because Kaggle has a different xgboost version.
 
 ---
 
@@ -644,7 +644,7 @@ The locked test set was scored once per version. Every change was driven by cros
 17. **Is G1/G2 leakage?** No. They are known before G3. Without them, nothing beats the majority class (ablation).
 18. **Is your DNN better than XGBoost?** Equal within noise: McNemar p = 0.73.
 19. **Why not a CNN or LSTM?** No spatial or sequential structure in a table of independent students.
-20. **Why CPU?** The network is tiny; GPU launch overhead is larger than the computation (benchmark: M3 CPU 0.25 s vs MPS 0.74 s).
+20. **Why CPU?** The network is tiny; GPU launch overhead is larger than the computation (benchmarks: M3 CPU 0.25 s vs MPS 0.74 s; Kaggle CPU 1.66 s vs T4 1.81 s).
 21. **How does the app guarantee the same preprocessing?** It loads the whole fitted Pipeline and orders the columns as in training; it never refits.
 22. **What would you improve with more time?** Nested CV for an unbiased tuning estimate; choosing the threshold on validation data to match a school's recall target; more students and more years of data.
 23. **What does the confusion matrix say?** 104 passes correct, 6 false alarms, 5 at-risk students missed, 15 caught.
