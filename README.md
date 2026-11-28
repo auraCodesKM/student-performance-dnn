@@ -33,6 +33,8 @@ Course project for 24CAI0306 Deep Neural Networks (B.E. CSE-AIML, Semester 5).
 
 Confusion matrix of the neural network: 106 passes correct, 15 of 20 failing students caught, 4 false alarms, 5 missed.
 
+On Kaggle (different library versions, so slightly different random starting weights) the same notebook gets 92.3% test accuracy with recall 85%.
+
 ## Run it
 
 Needs Python 3.12.

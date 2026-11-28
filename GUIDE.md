@@ -375,6 +375,7 @@ Project, data source, method, and a responsible-use note.
 | What are the confusion-matrix numbers? | 106 passes correct, 15 failing students caught, 4 false alarms, 5 missed. |
 | Why does the model miss 5 failing students? | 4 of them were borderline: mid-year grades of 8–12 and a final grade of 8 or 9, just under the pass mark. 1 had grades of 10 and 10, then scored 1 in the final, most likely because they dropped out. No input shows that in advance. |
 | How does the app use the model? | It loads the saved preprocessor and network and applies exactly the training steps. It never retrains. |
+| Why does Kaggle show 92.3% instead of 93.1%? | Kaggle has different library versions, so the random starting weights come out slightly differently. Same inputs, same settings; one student's difference. The saved model used by the app is the 93.1% one. |
 | What would you improve? | More students and years, more inputs such as attendance over time, and a lower threshold if the school wants to catch more students. |
 
 ---
