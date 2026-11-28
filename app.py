@@ -159,6 +159,9 @@ with model_tab:
              "test_recall_at_risk": "Test recall", "test_f1_macro": "Test macro-F1", "test_roc_auc": "Test ROC-AUC"}
     st.dataframe(pd.DataFrame(metrics["models"]).T[list(names)].rename(columns=names).style.format("{:.3f}"),
                  width="stretch")
+    st.image("results/figures/comparison.png")
+    st.caption("McNemar tests on the 130 test students find no significant difference between the DNN and the rule, "
+               "logistic regression or XGBoost (p > 0.7): the DNN is as good as the best traditional models, not clearly better.")
     st.markdown("**Architecture**  \n"
                 f"{len(dnn['selected_features'])} inputs → " + " → ".join(str(u) for u in model.named_steps["model"].hidden)
                 + " → 1 output. Each hidden layer: Linear → BatchNorm → ReLU → Dropout. "

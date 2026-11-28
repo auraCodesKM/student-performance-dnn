@@ -145,6 +145,7 @@ def evaluate(params, train, test):
              "selected_features": list(dnn.named_steps["select"].get_feature_names_out()), "params": params}
     joblib.dump(dnn, "models/dnn.joblib")
     plots(models, test)
+    comparison_plot(rows)
     return rows, extra
 
 
@@ -171,6 +172,25 @@ def plots(models, test):
     ax.legend(); fig.tight_layout(); fig.savefig(f"{FIG}/learning_curve.png", dpi=150); plt.close(fig)
 
 
+def comparison_plot(rows):
+    """DNN vs traditional ML: CV accuracy and CV macro-F1 (mean ± std over 15 folds), plus locked-test accuracy."""
+    names = list(rows)
+    colours = ["#16a34a" if n == DNN else "#a1a1aa" for n in names]
+    fig, axes = plt.subplots(1, 3, figsize=(13, 3.6), sharey=True)
+    panels = [("cv_accuracy", "cv_accuracy_std", "CV accuracy (mean ± std)"),
+              ("cv_f1_macro", "cv_f1_macro_std", "CV macro-F1 (mean ± std)"), ("test_accuracy", None, "Locked-test accuracy")]
+    for ax, (key, std, title) in zip(axes, panels):  # dot plot: the axis doesn't start at 0, so bars would exaggerate gaps
+        for y, n in enumerate(names):
+            v, e = rows[n][key], rows[n][std] if std else 0
+            ax.errorbar(v, y, xerr=e, fmt="o", color=colours[y], ecolor=colours[y], capsize=3, ms=7)
+            ax.text(v + e + 0.012, y, f"{v:.3f}", va="center", fontsize=8)
+        ax.set(title=title, xlim=(0.4, 1.08), yticks=range(len(names)), yticklabels=names)
+        ax.grid(axis="x", color="#e4e4e7"); ax.set_axisbelow(True)
+    axes[0].invert_yaxis()
+    fig.suptitle("DNN (green) vs traditional machine learning, same preprocessing and cross-validation")
+    fig.tight_layout(); fig.savefig(f"{FIG}/comparison.png", dpi=150); plt.close(fig)
+
+
 def write_report(rows, extra):
     m, s, ci, w = extra["seed_mean"], extra["seed_std"], extra["bootstrap_95ci"], extra["wilson_95ci_accuracy"]
     (tn, fp), (fn, tp) = extra["confusion_matrix"]
@@ -195,6 +215,7 @@ def write_report(rows, extra):
     lines += [f"| {k} | {v['dnn_right_only']} | {v['other_right_only']} | {v['p_value']:.3f} |" for k, v in extra["mcnemar_vs"].items()]
     lines += ["", f"Selected features ({len(extra['selected_features'])}): {', '.join(extra['selected_features'])}.",
               f"Hyperparameters: `{extra['params']}`; best epoch {extra['best_epoch']}.", "",
+              "![comparison](figures/comparison.png)",
               "![confusion](figures/confusion.png) ![roc](figures/roc.png)", "![learning curve](figures/learning_curve.png)", ""]
     with open("results/RESULTS.md", "w") as f:
         f.write("\n".join(lines))

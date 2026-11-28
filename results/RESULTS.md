@@ -42,5 +42,6 @@ McNemar exact test, DNN vs each model on the same 130 students (p < 0.05 would m
 Selected features (10): school_MS, higher_yes, Medu, Fedu, studytime, failures, famrel, absences, G1, G2.
 Hyperparameters: `{'n_layers': 2, 'width': 16, 'dropout': 0.47863507341115996, 'batchnorm': True, 'lr': 0.001996353900698521, 'weight_decay': 0.00843330780209246, 'batch_size': 32, 'class_weight': False, 'k': 10}`; best epoch 176.
 
+![comparison](figures/comparison.png)
 ![confusion](figures/confusion.png) ![roc](figures/roc.png)
 ![learning curve](figures/learning_curve.png)

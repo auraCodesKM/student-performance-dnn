@@ -4,6 +4,7 @@ Everything that learns from data (scaler, one-hot encoder, feature selector)
 lives inside a scikit-learn Pipeline, so it is fitted on training rows only.
 That is the main guard against data leakage.
 """
+import os
 import warnings
 
 import pandas as pd
@@ -12,7 +13,9 @@ from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-DATA_PATH = "data/student-por.csv"  # Portuguese course: 649 students
+# Portuguese course, 649 students. The repo copy is the original UCI file; on Kaggle the notebook points
+# STUDENT_DATA_PATH at the attached Kaggle mirror of the same data instead.
+DATA_PATH = os.environ.get("STUDENT_DATA_PATH", "data/student-por.csv")
 SEED = 42
 
 # Nominal columns have no natural order, so they are one-hot encoded.
@@ -59,7 +62,7 @@ assert sorted(sum(GROUPS.values(), [])) == sorted(FEATURES) == sorted(DESCRIPTIO
 
 def load_data(path=DATA_PATH):
     """Read the CSV and add the target: at_risk = 1 if the final grade G3 < 10 (fail)."""
-    df = pd.read_csv(path, sep=";")
+    df = pd.read_csv(path, sep=None, engine="python")  # detect the separator: ";" in the UCI file, "," in the Kaggle mirror
     # Failing is the positive class because those are the students we want to find,
     # so precision/recall/F1 describe how well the model detects at-risk students.
     df["at_risk"] = (df["G3"] < 10).astype(int)
