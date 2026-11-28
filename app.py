@@ -1,21 +1,26 @@
-"""Streamlit app: enter a student's details and get the DNN's prediction, Pass or At risk.
+"""Streamlit app: enter a student's details and the neural network predicts PASS or AT RISK.
 
 Run:  streamlit run app.py
-The app never trains anything. It loads models/dnn.joblib, the full fitted pipeline (encoder, scaler, feature
-selector and the 5-network ensemble) saved by src/evaluate.py, so inference uses exactly the training preprocessing.
+The app does not train anything. It loads the saved preprocessor (models/preprocessor.joblib) and the saved
+network (models/dnn.keras) created by `python -m src.train`.
 """
+import os
+
+os.environ.setdefault("KERAS_BACKEND", "torch")
+
 import json
 
 import joblib
+import keras
 import pandas as pd
 import streamlit as st
 
-import src.model  # noqa: F401  (the saved pipeline contains DNNClassifier, so its module must be importable)
-from src.data import CATEGORICAL, DESCRIPTIONS, FEATURES, GROUPS, REASONS, load_data, split
+from src.data import CATEGORICAL, DESCRIPTIONS, FEATURES, GROUPS, load_data, split
+from src.reasons import REASONS
 
-THRESHOLD = 0.5
+THRESHOLD = 0.5  # probability of failing at or above 50% -> AT RISK
 LEVEL_1_5 = {1: "1 · very low", 2: "2 · low", 3: "3 · medium", 4: "4 · high", 5: "5 · very high"}
-CHOICES = {  # readable labels for coded values (data/student.txt)
+CHOICES = {  # readable labels for the coded values in the dataset
     "school": {"GP": "Gabriel Pereira", "MS": "Mousinho da Silveira"}, "sex": {"F": "Female", "M": "Male"},
     "address": {"U": "Urban", "R": "Rural"}, "famsize": {"LE3": "3 or fewer", "GT3": "More than 3"},
     "Pstatus": {"T": "Living together", "A": "Apart"},
@@ -26,202 +31,206 @@ CHOICES = {  # readable labels for coded values (data/student.txt)
     "health": {1: "1 · very bad", 2: "2 · bad", 3: "3 · fair", 4: "4 · good", 5: "5 · very good"},
 }
 CHOICES["Fedu"] = CHOICES["Medu"]
-SLIDERS = {"age": (15, 22), "G1": (0, 20), "G2": (0, 20), "failures": (0, 3)}  # codebook ranges
+SLIDERS = {"age": (15, 22), "G1": (0, 20), "G2": (0, 20), "failures": (0, 3)}  # allowed ranges from the codebook
 
 st.set_page_config(page_title="Student Performance Predictor", layout="wide")
 st.markdown("""<style>
   .block-container {padding-top: 2rem; max-width: 1200px;}
   h1 {font-weight: 650; letter-spacing: -0.02em;}
-  .badge {display: inline-block; padding: 0.35rem 0.8rem; border-radius: 6px; font-weight: 650; font-size: 1.6rem; letter-spacing: 0.02em;}
+  .badge {display: inline-block; padding: 0.35rem 0.8rem; border-radius: 6px; font-weight: 650; font-size: 1.6rem;}
   .pass {background: #dcfce7; color: #166534;}
   .risk {background: #fee2e2; color: #991b1b;}
   .muted {color: #71717a; font-size: 0.9rem;}
-  /* keep the result panel in view while scrolling the form (desktop widths only) */
-  @media (min-width: 900px) {
-    div[data-testid="stColumn"]:has(.result-anchor) {position: sticky; top: 3.5rem; align-self: flex-start;}
-  }
-  /* on phones the columns stack: show the result above the long form */
-  @media (max-width: 899px) {
-    div[data-testid="stHorizontalBlock"]:has(.result-anchor) {flex-direction: column-reverse;}
-  }
+  @media (min-width: 900px) {div[data-testid="stColumn"]:has(.result-anchor) {position: sticky; top: 3.5rem; align-self: flex-start;}}
+  @media (max-width: 899px) {div[data-testid="stHorizontalBlock"]:has(.result-anchor) {flex-direction: column-reverse;}}
 </style>""", unsafe_allow_html=True)
 
 
 @st.cache_resource
-def load_model():
-    return joblib.load("models/dnn.joblib")
+def load_models():
+    return joblib.load("models/preprocessor.joblib"), keras.models.load_model("models/dnn.keras")
 
 
 @st.cache_data
 def load_reference():
-    train, _ = split(load_data())  # same 519 training students the model learned from
-    with open("results/metrics.json") as f:
-        metrics = json.load(f)
-    with open("results/feature_ablation_baseline.json") as f:
-        noise = json.load(f)
-    # Per-input evidence: mutual-information rank and fold stability (src/eda.py), add-back / remove test (src/experiments.py)
-    evidence = pd.read_csv("results/feature_audit.csv").merge(pd.read_csv("results/feature_ablation.csv"), on="feature")
-    return train, metrics, evidence.set_index("feature"), noise
+    train, _ = split(load_data())  # the same 519 training students the model learned from
+    with open("results/results.json") as f:
+        return train, json.load(f)
 
 
-model = load_model()
-train, metrics, evidence, noise = load_reference()
-dnn = metrics["dnn"]
-# Map the encoded columns the model kept (e.g. "school_MS") back to the raw inputs they came from ("school").
-used = [c for c in FEATURES if any(n == c or n.startswith(c + "_") for n in dnn["selected_features"])]
+prep, net = load_models()
+train, report = load_reference()
+kept = report["kept_columns"]
+# Which of the 32 inputs the model uses (a kept column like "school_MS" belongs to the input "school")
+used = [c for c in FEATURES if any(k == c or k.startswith(c + "_") for k in kept)]
 typical = {c: train[c].mode()[0] if c in CATEGORICAL else int(train[c].median()) for c in FEATURES}
 
 
-def field(container, name):
-    """One input widget, pre-filled with the most typical value among training students."""
-    label = DESCRIPTIONS[name] + (" ·  used by model" if name in used else "")
-    why = ("Used by the model. " if name in used else "Not used by the model. ") + REASONS[name]  # shown as the (?) tooltip
+def risk(students):
+    """Probability of being at risk, using exactly the same preprocessing as in training."""
+    X = prep.transform(pd.DataFrame(students)[FEATURES])
+    return net.predict(X, verbose=0)[:, 0]
+
+
+def field(name):
+    label = DESCRIPTIONS[name] + (" · used by model" if name in used else "")
+    why = ("Used by the model. " if name in used else "Not used by the model. ") + REASONS[name]
     if name in SLIDERS:
-        return container.slider(label, *SLIDERS[name], typical[name], key=name, help=why)
+        return st.slider(label, *SLIDERS[name], typical[name], key=name, help=why)
     if name == "absences":
-        return container.number_input(label, 0, 93, typical[name], key=name, help=why)  # codebook allows 0-93
+        return st.number_input(label, 0, 93, typical[name], key=name, help=why)
     options = sorted(train[name].unique())
     fmt = CHOICES.get(name, {}).get
-    return container.selectbox(label, options, index=options.index(typical[name]), key=name, help=why,
-                               format_func=lambda v: fmt(v) or str(v).replace("_", " ").capitalize())
-
-
-def risk(rows):
-    """P(at risk) for one or more students; columns are put in the exact training order."""
-    return model.predict_proba(pd.DataFrame(rows)[FEATURES])[:, 1]
+    return st.selectbox(label, options, index=options.index(typical[name]), key=name, help=why,
+                        format_func=lambda v: fmt(v) or str(v).replace("_", " ").capitalize())
 
 
 st.title("Student Performance Predictor")
-st.markdown('<p class="muted">Predicts whether a Portuguese secondary-school student will pass the year '
-            '(final grade G3 ≥ 10 / 20) or is at risk of failing, from demographic, academic, social and behavioural data.</p>',
-            unsafe_allow_html=True)
+st.markdown('<p class="muted">A deep neural network predicts whether a Portuguese secondary-school student will '
+            '<b>pass</b> (final grade G3 ≥ 10 out of 20) or is <b>at risk</b> of failing.</p>', unsafe_allow_html=True)
 
-predict_tab, model_tab, features_tab, about_tab = st.tabs(["Predict", "Model performance", "Feature choices", "About"])
+tab_predict, tab_results, tab_features, tab_about = st.tabs(
+    ["1 · Predict", "2 · Results & graphs", "3 · Feature choices", "4 · About"])
 
-with predict_tab:
+# ---------------------------------------------------------------- 1. Predict
+with tab_predict:
     form_col, result_col = st.columns([3, 2], gap="large")
     student = {}
     with form_col:
-        top, bottom = st.columns(2), st.columns(2)
-        for box, (group, cols) in zip([*top, *bottom], GROUPS.items()):
+        boxes = [*st.columns(2), *st.columns(2)]
+        for box, (group, cols) in zip(boxes, GROUPS.items()):
             with box.container(border=True):
                 st.markdown(f"**{group}**")
                 for c in cols:
-                    student[c] = field(st, c)
+                    student[c] = field(c)
 
     with result_col:
         st.markdown('<div class="result-anchor"></div>', unsafe_allow_html=True)
+        p = float(risk([student])[0])
         with st.container(border=True):
-            p = float(risk([student])[0])
-            at_risk = p >= THRESHOLD
             st.markdown("Prediction")
-            st.markdown(f'<span class="badge {"risk" if at_risk else "pass"}">{"AT RISK" if at_risk else "PASS"}</span>',
-                        unsafe_allow_html=True)
-            st.markdown(f"Estimated probability of failing: **{p:.0%}**  \n"
-                        f'<span class="muted">Decision cut-off {THRESHOLD:.0%}. '
-                        f"{'Close to the cut-off: treat as uncertain.' if abs(p - THRESHOLD) < 0.15 else ''}</span>",
+            st.markdown(f'<span class="badge {"risk" if p >= THRESHOLD else "pass"}">'
+                        f'{"AT RISK" if p >= THRESHOLD else "PASS"}</span>', unsafe_allow_html=True)
+            st.markdown(f"Chance of failing: **{p:.0%}**  \n<span class='muted'>AT RISK if 50% or more."
+                        f"{' Close to 50%, so treat it as uncertain.' if abs(p - THRESHOLD) < 0.15 else ''}</span>",
                         unsafe_allow_html=True)
             st.progress(p)
             if student["absences"] > train["absences"].max():
-                st.warning(f"Absences above {train['absences'].max()} were never seen in training, so this estimate is less reliable.")
+                st.warning(f"No training student had more than {train['absences'].max()} absences, so this is less reliable.")
 
         with st.container(border=True):
-            st.markdown("**Why this result**")
-            # Occlusion: put each input the model uses back to a typical value and see how the risk changes.
+            st.markdown("**What pushed this result**")
+            # For each input the model uses: set it back to a typical value and see how much the chance changes.
             changed = [c for c in used if student[c] != typical[c]]
             effects = dict(zip(changed, p - risk([student | {c: typical[c]} for c in changed]))) if changed else {}
             shown = [(c, d) for c, d in sorted(effects.items(), key=lambda kv: -abs(kv[1])) if abs(d) >= 0.01][:4]
             if not shown:
-                st.markdown("No input the model uses moves the risk by 1 point or more compared with a typical student.")
-            for c, delta in shown:
-                arrow = "raises" if delta > 0 else "lowers"
-                st.markdown(f"- **{DESCRIPTIONS[c]}** = {student[c]} (typical {typical[c]}) {arrow} the risk by {abs(delta):.0%}")
-            st.markdown('<span class="muted">Each line replaces one input with the typical training value and measures how much '
-                        'the predicted risk moves. Grades G1 and G2 usually dominate.</span>', unsafe_allow_html=True)
+                st.markdown("This student looks like a typical student on everything the model uses.")
+            for c, d in shown:
+                st.markdown(f"- **{DESCRIPTIONS[c]}** = {student[c]} (typical: {typical[c]}) "
+                            f"{'raises' if d > 0 else 'lowers'} the chance of failing by {abs(d):.0%}")
+            st.markdown("<span class='muted'>Each line sets one input back to a typical value and measures the change.</span>",
+                        unsafe_allow_html=True)
+        st.caption(f"The model uses {len(used)} of the 32 inputs: {', '.join(used)}.")
 
-        st.caption(f"The model uses {len(used)} of the 32 inputs: {', '.join(used)}. The others are shown for completeness.")
+# ---------------------------------------------------------------- 2. Results & graphs
+with tab_results:
+    dnn = report["models"]["DNN (neural network)"]["test"]
+    (tn, fp), (fn, tp) = report["confusion_matrix"]
+    st.markdown("**Final scores on the 130 test students** (kept aside; the model never saw them while learning or choosing settings)")
+    c = st.columns(4)
+    c[0].metric("Accuracy", f"{dnn['accuracy']:.1%}", help="Share of all students predicted correctly")
+    c[1].metric("Precision", f"{dnn['precision']:.1%}", help="Of the students we flagged AT RISK, how many really failed")
+    c[2].metric("Recall", f"{dnn['recall']:.1%}", help="Of the students who really failed, how many we flagged")
+    c[3].metric("F1 score", f"{dnn['f1']:.3f}", help="Balance of precision and recall")
+    st.info("Only 15% of students fail, so a model that always says 'pass' already gets 84.6% accuracy. "
+            "That is why we also look at recall and F1: they check that we actually find the failing students.")
 
-with model_tab:
-    r = metrics["models"]["DNN (MLP)"]
-    (tn, fp), (fn, tp) = dnn["confusion_matrix"]
-    lo, hi = dnn["wilson_95ci_accuracy"]
-    st.markdown("Scores on **130 locked test students** the model never saw during training, tuning or model selection.")
-    k = st.columns(5)
-    k[0].metric("Accuracy", f"{r['test_accuracy']:.1%}", help=f"95% interval {lo:.1%}–{hi:.1%}")
-    k[1].metric("Precision (at risk)", f"{r['test_precision_at_risk']:.1%}", help="Of students flagged at risk, share who really failed")
-    k[2].metric("Recall (at risk)", f"{r['test_recall_at_risk']:.1%}", help="Of students who really failed, share the model flagged")
-    k[3].metric("Macro-F1", f"{r['test_f1_macro']:.3f}")
-    k[4].metric("ROC-AUC", f"{r['test_roc_auc']:.3f}")
-    st.markdown(f"Confusion matrix: **{tp}** at-risk students caught, **{fn}** missed, **{fp}** false alarms, **{tn}** passes correctly predicted. "
-                f"Over 5 retrained copies the test accuracy is {dnn['seed_mean']['accuracy']:.1%} ± {dnn['seed_std']['accuracy']:.1%}. "
-                "Predicting 'pass' for everyone would already score 84.6%, so recall and macro-F1 matter more than accuracy.")
-    left, right = st.columns(2)
-    left.image("results/figures/confusion.png", width=380)
-    right.image("results/figures/roc.png", width=420)
+    left, right = st.columns([2, 3])
+    left.image("results/figures/confusion.png", width=340)
+    right.markdown(f"""**Confusion matrix, in words**
+- **{tn}** passing students correctly predicted PASS
+- **{tp}** failing students correctly flagged AT RISK
+- **{fp}** false alarms (flagged AT RISK but passed)
+- **{fn}** missed (predicted PASS but failed)""")
 
-    st.markdown("**Comparison with traditional machine learning** (same preprocessing, same cross-validation)")
-    names = {"cv_accuracy": "CV accuracy", "cv_f1_macro": "CV macro-F1", "test_accuracy": "Test accuracy",
-             "test_recall_at_risk": "Test recall", "test_f1_macro": "Test macro-F1", "test_roc_auc": "Test ROC-AUC"}
-    st.dataframe(pd.DataFrame(metrics["models"]).T[list(names)].rename(columns=names).style.format("{:.3f}"),
-                 width="stretch")
+    st.markdown("**DNN vs traditional machine learning** (same students, same inputs, same 5-fold cross-validation)")
     st.image("results/figures/comparison.png")
-    st.caption("McNemar tests on the 130 test students find no significant difference between the DNN and the rule, "
-               "logistic regression or XGBoost (p > 0.7): the DNN is as good as the best traditional models, not clearly better.")
-    st.markdown("**Architecture**  \n"
-                f"{len(dnn['selected_features'])} inputs → " + " → ".join(str(u) for u in model.named_steps["model"].hidden)
-                + " → 1 output. Each hidden layer: Linear → BatchNorm → ReLU → Dropout. "
-                "He initialisation, binary cross-entropy, AdamW, early stopping, average of 5 networks. Tuned with Optuna.")
+    rows = {name: {"CV accuracy": r["cv"]["accuracy"] if r["cv"] else None, "CV F1": r["cv"]["f1"] if r["cv"] else None,
+                   "Test accuracy": r["test"]["accuracy"], "Test precision": r["test"]["precision"],
+                   "Test recall": r["test"]["recall"], "Test F1": r["test"]["f1"]} for name, r in report["models"].items()}
+    st.dataframe(pd.DataFrame(rows).T.style.format("{:.3f}", na_rep="–"), width="stretch")
 
-with features_tab:
-    lo_f1, hi_f1 = min(noise["seed_cv_f1_macro"]), max(noise["seed_cv_f1_macro"])
-    st.markdown(f"""
-**How the 10 inputs were chosen.** All 32 inputs were candidates; none was removed by hand.
+    st.markdown("**Why these choices** (each tested with 5-fold cross-validation on the training students; green = chosen)")
+    st.image("results/figures/choices.png")
+    st.markdown("**How the network learned**")
+    st.image("results/figures/learning_curve.png", width=620)
+    s = report["settings"]
+    st.markdown(f"""**The final network**
+| Part | Choice | Why |
+|---|---|---|
+| Inputs | {len(kept)} columns | Feature selection (tab 3) |
+| Hidden layers | {s['hidden'][0]} then {s['hidden'][1]} neurons | Best of the grid search |
+| Activation | {s['activation']} | Best in the activation test (graph above) |
+| Dropout | {s['dropout']} | Best of the grid search; stops the network memorising |
+| Output | 1 neuron, sigmoid | Gives a probability between 0 and 1 |
+| Loss | binary cross-entropy | Standard loss for yes/no predictions |
+| Optimizer | {s['optimizer']}, learning rate {s['learning_rate']} | Best in the optimizer test and grid search |
+| Early stopping | stop after 20 epochs without improvement | Trained {report['epochs_trained']} epochs, kept epoch {report['best_epoch']} |""")
 
-1. **Rank.** On the 519 training students only, every encoded column (45 in total) is ranked by **mutual information** with pass / at risk: how much knowing the column reduces uncertainty about the outcome.
-2. **Keep the top k.** Optuna tuned k: keeping 10 columns scored better than keeping 15, 20 or all 45 (mean CV macro-F1 0.833 vs 0.791 with all 45). Ranking and selection are repeated inside every cross-validation fold, so the test students never influence the choice.
-3. **Check.** Each of the 22 unused inputs was **added back** one at a time, and each of the 10 used inputs **removed** one at a time, on the same 15 CV folds.
-
-**Result of the check.** Retraining the *same* model with 5 different random seeds already moves CV macro-F1 between {lo_f1:.3f} and {hi_f1:.3f} (a spread of {hi_f1 - lo_f1:.3f}).
-- Only removing **G2** ({evidence.loc['G2', 'delta_cv_f1_macro']:+.3f}) or **G1** ({evidence.loc['G1', 'delta_cv_f1_macro']:+.3f}) changes the result by more than that.
-- Every other input, used or not, moves the score by less than about 0.025, which is no clearer than re-running training.
-- Once the grades are known, the remaining attributes add very little, and keeping the 10 strongest is the simplest model that performs as well.
+# ---------------------------------------------------------------- 3. Feature choices
+with tab_features:
+    exp = report["experiments"]["features"]
+    st.markdown(f"""**How we chose the inputs**
+1. All **32** inputs were considered. Text columns become 0/1 columns, so there are 45 columns in total.
+2. Each column gets an **information score**: how much it tells us about pass / at risk (mutual information), calculated on the training students only.
+3. We kept the **top {len(kept)}**. We tested keeping 5, 10, 20 or all 45 columns with cross-validation, and {report['k']} gave the best F1:
 """)
-    pick = st.selectbox("Look up any input", FEATURES, index=FEATURES.index("address"),
-                        format_func=lambda f: f"{DESCRIPTIONS[f]}  ({f})")
-    e = evidence.loc[pick]
+    st.table(pd.DataFrame({k: {"CV accuracy": f"{v['accuracy']:.3f}", "CV F1": f"{v['f1']:.3f}"} for k, v in exp.items()}).T
+             .rename_axis("Columns kept"))
+    st.image("results/figures/feature_scores.png", width=560)
+
+    info = report["info_scores"]
+    ranked = sorted(info, key=info.get, reverse=True)
+
+    def evidence(f):
+        cols = [c for c in info if c == f or c.startswith(f + "_")]
+        best = max(cols, key=info.get)
+        return info[best], ranked.index(best) + 1
+
+    pick = st.selectbox("Ask about any input", FEATURES, index=FEATURES.index("address"),
+                        format_func=lambda f: f"{DESCRIPTIONS[f]} ({f})")
+    score, rank = evidence(pick)
     with st.container(border=True):
-        st.markdown(f"**{DESCRIPTIONS[pick]}** (`{pick}`) is **{'USED' if pick in used else 'NOT USED'}** by the model.  \n"
-                    f"{REASONS[pick]}")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Mutual-information rank", f"{e['mi_rank_of_45']} of 45", help="Best-ranked encoded column of this input; the top 10 are kept")
-        c2.metric("Kept in CV folds", e["kept_in_folds"], help="How often it makes the top 10 when selection is refitted on each of the 15 CV training folds")
-        c3.metric(f"CV macro-F1 when {e['test']}", f"{e['delta_cv_f1_macro']:+.3f}",
-                  help=f"Paired 15-fold CV vs the final 10 inputs (± {e['se_f1']:.3f} standard error). Seed-to-seed spread: {hi_f1 - lo_f1:.3f}")
+        st.markdown(f"**{DESCRIPTIONS[pick]}** is **{'USED' if pick in used else 'NOT USED'}** by the model.  \n{REASONS[pick]}")
+        a, b = st.columns(2)
+        a.metric("Information score", f"{score:.3f}")
+        b.metric("Rank", f"{rank} of 45", help=f"The top {len(kept)} are kept")
+        if train[pick].nunique() <= 6:
+            rates = train.groupby(pick).at_risk.agg(["mean", "size"])
+            st.table(pd.DataFrame({"At-risk rate": rates["mean"].map("{:.0%}".format), "Students": rates["size"]})
+                     .rename(index=lambda v: CHOICES.get(pick, {}).get(v, v)))
 
-    for title, mask in [("Used by the model (10)", evidence.index.isin(used)), ("Not used (22)", ~evidence.index.isin(used))]:
-        st.markdown(f"**{title}**")
-        part = evidence[mask].sort_values("mi_rank_of_45")
-        st.table(pd.DataFrame({  # st.table wraps long text, unlike st.dataframe
-            "Input": [DESCRIPTIONS[f] for f in part.index], "MI rank": part["mi_rank_of_45"].astype(str),
-            "Kept in folds": part["kept_in_folds"],
-            f"ΔCV F1 if {'removed' if 'Used' in title else 'added'}": [f"{d:+.3f}" for d in part["delta_cv_f1_macro"]],
-            "Why": [REASONS[f] for f in part.index]}).set_index("Input"))
-    st.caption(f"ΔCV F1 is the change in cross-validated macro-F1 (+ = better). Changes inside ±{hi_f1 - lo_f1:.3f} "
-               "are within the seed-to-seed noise of retraining the same model.")
+    st.markdown("**All 32 inputs**")
+    table = pd.DataFrame([{"Input": DESCRIPTIONS[f], "Used": "yes" if f in used else "no", "Rank": evidence(f)[1],
+                           "Why": REASONS[f]} for f in FEATURES]).sort_values("Rank").set_index("Input")
+    st.table(table)
 
-with about_tab:
+# ---------------------------------------------------------------- 4. About
+with tab_about:
     st.markdown("""
-**Project.** Student Academic Performance Prediction using Deep Neural Networks. Course 24CAI0306 Deep Neural Networks,
-B.E. CSE-AIML, Semester 5. Author: Kavin Thakur.
+**Project.** Student Academic Performance Prediction using Deep Neural Networks · 24CAI0306 Deep Neural Networks ·
+B.E. CSE-AIML, Semester 5 · Kavin Thakur.
 
-**Data.** UCI Student Performance dataset, Portuguese course: 649 students from two secondary schools in Portugal, 2005–06
-(P. Cortez and A. Silva, 2008; CC BY 4.0). Target: at risk if the final grade G3 is below 10 out of 20.
+**Data.** UCI Student Performance dataset (Portuguese course): 649 students from two schools in Portugal, 2005–06
+(P. Cortez and A. Silva, 2008, CC BY 4.0). AT RISK means a final grade G3 below 10 out of 20.
 
-**Method.** Stratified 80/20 split with the test set locked. One-hot encoding and standardisation, mutual-information
-feature selection and a PyTorch multilayer perceptron, all fitted inside one scikit-learn pipeline on training data only.
-Hyperparameters tuned with Optuna by cross-validation, then compared with a naive rule, logistic regression,
-random forest and XGBoost.
+**Method.** 80% of students for training, 20% kept aside for testing. Text columns one-hot encoded, numbers standardised,
+top columns chosen by information score. A Keras neural network (Dense + Dropout layers, sigmoid output) chosen by
+grid search with 5-fold cross-validation, and compared with logistic regression, a decision tree and a random forest.
 
-**Use responsibly.** The model was trained on two schools in one year and includes sensitive attributes. It is a prompt for
-a conversation with a student, not a decision about them. Source code and documentation: github.com/auraCodesKM/student-performance-dnn.
+**Use responsibly.** Trained on two schools in one year, and some inputs are sensitive (sex, family). Use it to start a
+conversation with a student, never to decide something about them.
+
+Code: github.com/auraCodesKM/student-performance-dnn
 """)
