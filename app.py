@@ -125,9 +125,9 @@ with predict_tab:
             # Occlusion: put each input the model uses back to a typical value and see how the risk changes.
             changed = [c for c in used if student[c] != typical[c]]
             effects = dict(zip(changed, p - risk([student | {c: typical[c]} for c in changed]))) if changed else {}
-            shown = sorted(effects.items(), key=lambda kv: -abs(kv[1]))[:4]
+            shown = [(c, d) for c, d in sorted(effects.items(), key=lambda kv: -abs(kv[1])) if abs(d) >= 0.01][:4]
             if not shown:
-                st.markdown("Every input the model relies on is at the typical training value.")
+                st.markdown("No input the model uses moves the risk by 1 point or more compared with a typical student.")
             for c, delta in shown:
                 arrow = "raises" if delta > 0 else "lowers"
                 st.markdown(f"- **{DESCRIPTIONS[c]}** = {student[c]} (typical {typical[c]}) {arrow} the risk by {abs(delta):.0%}")
