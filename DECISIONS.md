@@ -640,7 +640,7 @@ The locked test set was scored once per version. Every change was driven by cros
 13. **How did you tune?** Optuna TPE: 40 trials, 9 hyperparameters, 5-fold × 2-repeat CV macro-F1 on training data only.
 14. **How do you prevent leakage?** Split first. All preprocessing and selection sit inside the Pipeline and are refit on training folds. Early stopping and tuning never see the test set.
 15. **Why mutual information with discrete features?** All inputs are discrete codes. The continuous estimator was unstable, and the discrete one keeps 8 of 10 features in every fold.
-16. **Which features matter most?** G2, G1, past failures, wanting higher education, school and absences (selection stability plus permutation importance, notebook 11).
+16. **Which features matter most?** By permutation importance on the test set (notebook 11), G2 (ROC-AUC drop 0.168) and G1 (0.070) dominate; school, failures and famrel add a little. Feature selection keeps G1, G2, failures, higher, school, studytime, Fedu and absences in every CV fold.
 17. **Is G1/G2 leakage?** No. They are known before G3. Without them, nothing beats the majority class (ablation).
 18. **Is your DNN better than XGBoost?** Equal within noise: McNemar p = 0.73.
 19. **Why not a CNN or LSTM?** No spatial or sequential structure in a table of independent students.

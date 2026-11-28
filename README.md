@@ -6,6 +6,8 @@ Course project for 24CAI0306 Deep Neural Networks (B.E. CSE-AIML, Semester 5).
 
 - **Notebook (runs everything):** [`student_performance_dnn.ipynb`](student_performance_dnn.ipynb), also on Kaggle: [kaggle.com/code/kavinthakurkm/student-performance-dnn](https://www.kaggle.com/code/kavinthakurkm/student-performance-dnn)
 - **Every design decision, its alternatives and viva Q&A:** [`DECISIONS.md`](DECISIONS.md)
+- **Line-by-line code walkthrough, notebook and Kaggle explained, CHO mapping, DNN vs ML comparison:** [`WALKTHROUGH.md`](WALKTHROUGH.md)
+- **What to show in the Streamlit demo, step by step:** [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md)
 - **Full result tables:** [`results/RESULTS.md`](results/RESULTS.md)
 
 ## Problem statement
@@ -19,7 +21,7 @@ Schools want to find students who are likely to fail early enough to help them. 
 
 ## Dataset
 
-[UCI Student Performance](https://archive.ics.uci.edu/dataset/320/student+performance), Portuguese language course (P. Cortez and A. Silva, 2008, CC BY 4.0).
+[UCI Student Performance](https://archive.ics.uci.edu/dataset/320/student+performance) (DOI [10.24432/C5TG7T](https://doi.org/10.24432/C5TG7T)), Portuguese language course (P. Cortez and A. Silva, 2008, CC BY 4.0). Kaggle mirror: [`uciml/student-alcohol-consumption`](https://www.kaggle.com/datasets/uciml/student-alcohol-consumption).
 
 - **Size:** 649 students from two secondary schools in Portugal, 2005–06; 33 columns, no missing values.
 - **Target:** G3, the final grade. 100 students (15.4%) are at risk.
@@ -139,7 +141,7 @@ python -m src.numpy_mlp   # gradient-check self-test of the NumPy network
 
 **Reproducibility.** All randomness is seeded. A fresh clone with a new virtual environment reproduced `best_params.json` and every number in `metrics.json` exactly. On Kaggle (Python 3.13, different library versions) the DNN's results were identical; XGBoost's test accuracy moved by 3 students (0.877).
 
-**On Kaggle:** open the notebook link above and choose *Copy & Edit*. The first cell clones this repository; internet access must be on. The notebook runs on CPU or GPU.
+**On Kaggle:** open the notebook link above and choose *Copy & Edit*. The data comes from the attached Kaggle dataset [`uciml/student-alcohol-consumption`](https://www.kaggle.com/datasets/uciml/student-alcohol-consumption), Kaggle's mirror of the UCI files; the notebook checks it is identical to `data/student-por.csv`. The first cell clones this repository for the code, so internet access must be on. The notebook runs on CPU or GPU.
 
 ## Limitations
 
