@@ -92,6 +92,9 @@ File: `student_performance_dnn.ipynb`. It runs top to bottom in about 2 minutes 
   - G1 and G2 have VIF ≈ 4, below 5, so their multicollinearity is acceptable.
   - k = 10 scored best (0.833 mean tuning macro-F1, against 0.791 with all 45 columns).
 - **Why.** It proves that no feature was removed by hand, and that selection is stable and leakage-free.
+- **Add-back / remove test.** Each unused input is added back and each used input removed, one at a time, on the same 15 folds.
+  - Only removing G2 (−0.111 macro-F1) or G1 (−0.040) matters. Every other change is inside the seed-to-seed noise (0.017).
+  - The **address check** shows rural students fail more (21% vs 13%), but students with the same G2 fail at the same rate.
 
 ### 6. Preprocessing pipeline
 - **What it does:**
@@ -592,6 +595,11 @@ def gradient_check(model, X, y, eps=1e-5):
   4. Optionally attaches a **learning-rate schedule**: `StepLR` (halve every 30 epochs) or `ExponentialLR` (×0.97 per epoch).
   5. Runs a plain train loop plus a **validation loop** for 100 epochs and records the losses, validation accuracy and time.
 - **`summary(results)`:** best validation loss, its epoch, validation accuracy at that epoch, final loss and seconds.
+- **`feature_ablation(train, params)`:** the add-back / remove test behind the app's "Feature choices" tab.
+  1. It builds a pipeline that keeps a **fixed column list**: `ColumnTransformer([("keep", "passthrough", cols)])` after encoding.
+  2. It scores the final 10 inputs, then each variant (one input removed or added), all with `cross_validate` on the same 15 folds. The per-fold differences give a paired mean ± standard error.
+  3. It also retrains the 10-input model with 4 more seeds to measure the noise floor.
+  4. Results are saved to `results/feature_ablation.csv` and `feature_ablation_baseline.json`.
 - **No early stopping here,** on purpose: fixed 100 epochs keeps the curves comparable.
 
 ### D7. `src/eda.py`: audit, plots, feature audit
@@ -601,6 +609,7 @@ def gradient_check(model, X, y, eps=1e-5):
 - **`feature_audit(train)`:**
   1. For each of the 15 evaluation CV folds, it refits the preprocessor with k = 10 on that fold's training rows and records which raw columns survive. A one-hot column such as `Mjob_teacher` counts for `Mjob`.
   2. Then it builds the per-feature table: rank correlation with G3, the at-risk rate gap between categories, kept-in-folds and in-final-model.
+- **Also in `feature_audit`:** each input's mutual-information value and rank (1–45, for its best encoded column). `python -m src.eda` saves the table to `results/feature_audit.csv` for the app.
 - **`vif(train)`:** the variance inflation factor for all numeric columns at once, as the diagonal of the inverse correlation matrix. VIF = 1 / (1 − R²).
 
 ### D8. `app.py`: the Streamlit app
@@ -690,6 +699,13 @@ shown = [(c, d) for c, d in sorted(effects.items(), key=lambda kv: -abs(kv[1])) 
 - It shows the 4 biggest effects of at least 1 point.
 
 **Model performance tab:** the test metrics from `metrics.json`, the confusion matrix, the ROC curves, the comparison table and chart, and a one-line architecture summary.
+**Feature choices tab:**
+- explains the selection rule and the add-back / remove test;
+- has a **"Look up any input"** box (default: address) showing the input's reason, mutual-information rank, folds kept and CV change;
+- lists all 32 inputs with reasons in two tables, used and not used.
+
+Every input in the Predict form also has a **(?) tooltip** with its reason (`help=why` in `field()`, text from `REASONS` in `src/data.py`).
+
 **About tab:** project, data source, method and a responsible-use note.
 
 ---

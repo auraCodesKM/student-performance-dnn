@@ -1,0 +1,33 @@
+feature,description,group,type,encoding,spearman_with_G3,at_risk_rate_gap,mutual_information,mi_rank_of_45,kept_in_folds,in_final_model
+school,School (GP or MS),Academic,categorical,one 0/1 column,,0.2318092428711898,0.0444283395654045,4,15/15,True
+Fedu,Father's education (0-4),Demographic,numeric/ordinal,standardised,0.24829296444864107,,0.02159704607668106,8,15/15,True
+studytime,Weekly study time (1-4),Academic,numeric/ordinal,standardised,0.26975522975205146,,0.023469339351853767,7,15/15,True
+failures,Past class failures (0-3),Academic,numeric/ordinal,standardised,-0.46667859315526794,,0.07124604081961036,3,15/15,True
+higher,Wants higher education,Academic,categorical,one 0/1 column,,0.347655044739278,0.03401635896048294,5,15/15,True
+absences,School absences,Behavioural,numeric/ordinal,standardised,-0.13822626377950806,,0.0330016905699495,6,15/15,True
+G1,1st period grade (0-20),Academic,grade,standardised,0.8845988863304064,,0.25245338686516305,2,15/15,True
+G2,2nd period grade (0-20),Academic,grade,standardised,0.9434930947890997,,0.2737603648193306,1,15/15,True
+Medu,Mother's education (0-4),Demographic,numeric/ordinal,standardised,0.2677837500651915,,0.017522009503602623,9,10/15,True
+famrel,Family relationship quality (1-5),Social,numeric/ordinal,standardised,0.0778193796180669,,0.016316851313532957,10,9/15,True
+age,Age (15-22),Demographic,numeric/ordinal,standardised,-0.07313128489408798,,0.011747887870909227,12,6/15,False
+goout,Going out with friends (1-5),Social,numeric/ordinal,standardised,-0.12055078757761724,,0.012688170011244546,11,5/15,False
+guardian,Guardian,Demographic,categorical,one-hot (3 columns),,0.11128087598675834,0.0035108409303460097,24,0/15,False
+schoolsup,Extra school support,Academic,categorical,one 0/1 column,,0.032667386609071286,0.0004137854315431899,36,0/15,False
+famsup,Family educational support,Academic,categorical,one 0/1 column,,0.02841499103181347,0.0007228858263122473,33,0/15,False
+activities,Extra-curricular activities,Social,categorical,one 0/1 column,,0.05396891438081369,0.0028097526046346466,27,0/15,False
+paid,Extra paid classes,Academic,categorical,one 0/1 column,,0.011929007855688095,2.839758670647452e-05,41,0/15,False
+Fjob,Father's job,Demographic,categorical,one-hot (5 columns),,0.12592202318229714,0.003633908647129992,23,0/15,False
+nursery,Attended nursery school,Academic,categorical,one 0/1 column,,0.019261962692619622,0.00023940877609261724,38,0/15,False
+internet,Internet at home,Social,categorical,one 0/1 column,,0.06842061547406456,0.0030373385300459244,26,0/15,False
+reason,Reason for choosing school,Academic,categorical,one-hot (4 columns),,0.1916445623342175,0.007351894123296787,15,0/15,False
+sex,Sex,Demographic,categorical,one 0/1 column,,0.053171983865053174,0.0026042698239850393,28,0/15,False
+Mjob,Mother's job,Demographic,categorical,one-hot (5 columns),,0.15107561929595828,0.006604620005003805,16,0/15,False
+Pstatus,Parents together / apart,Demographic,categorical,one 0/1 column,,0.017248390376143702,0.000122275199340785,39,0/15,False
+famsize,Family size (<=3 / >3),Demographic,categorical,one 0/1 column,,0.027933974242699083,0.0006265166912579889,34,0/15,False
+address,Home address (urban / rural),Demographic,categorical,one 0/1 column,,0.08665407076605977,0.005955759913763459,19,0/15,False
+health,Current health (1-5),Behavioural,numeric/ordinal,standardised,-0.10375438216744906,,0.002338369305543181,29,0/15,False
+Walc,Weekend alcohol use (1-5),Behavioural,numeric/ordinal,standardised,-0.16123737566090712,,0.007741787317966792,14,0/15,False
+Dalc,Workday alcohol use (1-5),Behavioural,numeric/ordinal,standardised,-0.20005804438045363,,0.00659503002802991,17,0/15,False
+freetime,Free time after school (1-5),Social,numeric/ordinal,standardised,-0.1308614535241309,,0.008802741928041938,13,0/15,False
+traveltime,Travel time to school (1-4),Academic,numeric/ordinal,standardised,-0.14599490283071076,,0.00365658015547371,22,0/15,False
+romantic,In a relationship,Social,categorical,one 0/1 column,,0.06120986238532111,0.003275143428468047,25,0/15,False

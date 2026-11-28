@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 
 import src.model  # noqa: F401  (the saved pipeline contains DNNClassifier, so its module must be importable)
-from src.data import CATEGORICAL, DESCRIPTIONS, FEATURES, GROUPS, load_data, split
+from src.data import CATEGORICAL, DESCRIPTIONS, FEATURES, GROUPS, REASONS, load_data, split
 
 THRESHOLD = 0.5
 LEVEL_1_5 = {1: "1 · very low", 2: "2 · low", 3: "3 · medium", 4: "4 · high", 5: "5 · very high"}
@@ -57,11 +57,15 @@ def load_reference():
     train, _ = split(load_data())  # same 519 training students the model learned from
     with open("results/metrics.json") as f:
         metrics = json.load(f)
-    return train, metrics
+    with open("results/feature_ablation_baseline.json") as f:
+        noise = json.load(f)
+    # Per-input evidence: mutual-information rank and fold stability (src/eda.py), add-back / remove test (src/experiments.py)
+    evidence = pd.read_csv("results/feature_audit.csv").merge(pd.read_csv("results/feature_ablation.csv"), on="feature")
+    return train, metrics, evidence.set_index("feature"), noise
 
 
 model = load_model()
-train, metrics = load_reference()
+train, metrics, evidence, noise = load_reference()
 dnn = metrics["dnn"]
 # Map the encoded columns the model kept (e.g. "school_MS") back to the raw inputs they came from ("school").
 used = [c for c in FEATURES if any(n == c or n.startswith(c + "_") for n in dnn["selected_features"])]
@@ -71,13 +75,14 @@ typical = {c: train[c].mode()[0] if c in CATEGORICAL else int(train[c].median())
 def field(container, name):
     """One input widget, pre-filled with the most typical value among training students."""
     label = DESCRIPTIONS[name] + (" ·  used by model" if name in used else "")
+    why = ("Used by the model. " if name in used else "Not used by the model. ") + REASONS[name]  # shown as the (?) tooltip
     if name in SLIDERS:
-        return container.slider(label, *SLIDERS[name], typical[name], key=name)
+        return container.slider(label, *SLIDERS[name], typical[name], key=name, help=why)
     if name == "absences":
-        return container.number_input(label, 0, 93, typical[name], key=name)  # codebook allows 0-93
+        return container.number_input(label, 0, 93, typical[name], key=name, help=why)  # codebook allows 0-93
     options = sorted(train[name].unique())
     fmt = CHOICES.get(name, {}).get
-    return container.selectbox(label, options, index=options.index(typical[name]), key=name,
+    return container.selectbox(label, options, index=options.index(typical[name]), key=name, help=why,
                                format_func=lambda v: fmt(v) or str(v).replace("_", " ").capitalize())
 
 
@@ -91,7 +96,7 @@ st.markdown('<p class="muted">Predicts whether a Portuguese secondary-school stu
             '(final grade G3 ≥ 10 / 20) or is at risk of failing, from demographic, academic, social and behavioural data.</p>',
             unsafe_allow_html=True)
 
-predict_tab, model_tab, about_tab = st.tabs(["Predict", "Model performance", "About"])
+predict_tab, model_tab, features_tab, about_tab = st.tabs(["Predict", "Model performance", "Feature choices", "About"])
 
 with predict_tab:
     form_col, result_col = st.columns([3, 2], gap="large")
@@ -166,6 +171,43 @@ with model_tab:
                 f"{len(dnn['selected_features'])} inputs → " + " → ".join(str(u) for u in model.named_steps["model"].hidden)
                 + " → 1 output. Each hidden layer: Linear → BatchNorm → ReLU → Dropout. "
                 "He initialisation, binary cross-entropy, AdamW, early stopping, average of 5 networks. Tuned with Optuna.")
+
+with features_tab:
+    lo_f1, hi_f1 = min(noise["seed_cv_f1_macro"]), max(noise["seed_cv_f1_macro"])
+    st.markdown(f"""
+**How the 10 inputs were chosen.** All 32 inputs were candidates; none was removed by hand.
+
+1. **Rank.** On the 519 training students only, every encoded column (45 in total) is ranked by **mutual information** with pass / at risk: how much knowing the column reduces uncertainty about the outcome.
+2. **Keep the top k.** Optuna tuned k: keeping 10 columns scored better than keeping 15, 20 or all 45 (mean CV macro-F1 0.833 vs 0.791 with all 45). Ranking and selection are repeated inside every cross-validation fold, so the test students never influence the choice.
+3. **Check.** Each of the 22 unused inputs was **added back** one at a time, and each of the 10 used inputs **removed** one at a time, on the same 15 CV folds.
+
+**Result of the check.** Retraining the *same* model with 5 different random seeds already moves CV macro-F1 between {lo_f1:.3f} and {hi_f1:.3f} (a spread of {hi_f1 - lo_f1:.3f}).
+- Only removing **G2** ({evidence.loc['G2', 'delta_cv_f1_macro']:+.3f}) or **G1** ({evidence.loc['G1', 'delta_cv_f1_macro']:+.3f}) changes the result by more than that.
+- Every other input, used or not, moves the score by less than about 0.025, which is no clearer than re-running training.
+- Once the grades are known, the remaining attributes add very little, and keeping the 10 strongest is the simplest model that performs as well.
+""")
+    pick = st.selectbox("Look up any input", FEATURES, index=FEATURES.index("address"),
+                        format_func=lambda f: f"{DESCRIPTIONS[f]}  ({f})")
+    e = evidence.loc[pick]
+    with st.container(border=True):
+        st.markdown(f"**{DESCRIPTIONS[pick]}** (`{pick}`) is **{'USED' if pick in used else 'NOT USED'}** by the model.  \n"
+                    f"{REASONS[pick]}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Mutual-information rank", f"{e['mi_rank_of_45']} of 45", help="Best-ranked encoded column of this input; the top 10 are kept")
+        c2.metric("Kept in CV folds", e["kept_in_folds"], help="How often it makes the top 10 when selection is refitted on each of the 15 CV training folds")
+        c3.metric(f"CV macro-F1 when {e['test']}", f"{e['delta_cv_f1_macro']:+.3f}",
+                  help=f"Paired 15-fold CV vs the final 10 inputs (± {e['se_f1']:.3f} standard error). Seed-to-seed spread: {hi_f1 - lo_f1:.3f}")
+
+    for title, mask in [("Used by the model (10)", evidence.index.isin(used)), ("Not used (22)", ~evidence.index.isin(used))]:
+        st.markdown(f"**{title}**")
+        part = evidence[mask].sort_values("mi_rank_of_45")
+        st.table(pd.DataFrame({  # st.table wraps long text, unlike st.dataframe
+            "Input": [DESCRIPTIONS[f] for f in part.index], "MI rank": part["mi_rank_of_45"].astype(str),
+            "Kept in folds": part["kept_in_folds"],
+            f"ΔCV F1 if {'removed' if 'Used' in title else 'added'}": [f"{d:+.3f}" for d in part["delta_cv_f1_macro"]],
+            "Why": [REASONS[f] for f in part.index]}).set_index("Input"))
+    st.caption(f"ΔCV F1 is the change in cross-validated macro-F1 (+ = better). Changes inside ±{hi_f1 - lo_f1:.3f} "
+               "are within the seed-to-seed noise of retraining the same model.")
 
 with about_tab:
     st.markdown("""

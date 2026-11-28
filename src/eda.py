@@ -12,7 +12,8 @@ import pandas as pd
 from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.pipeline import Pipeline
 
-from src.data import CATEGORICAL, DESCRIPTIONS, FEATURES, GRADES, GROUPS, NUMERIC, load_data, make_preprocessor, split
+from src.data import (CATEGORICAL, DESCRIPTIONS, FEATURES, GRADES, GROUPS, NUMERIC, discrete_mi, load_data,
+                      make_preprocessor, split)
 
 FIG = "results/figures"
 
@@ -83,16 +84,21 @@ def feature_audit(train, k=10):
         for c in FEATURES:  # a one-hot column such as "Mjob_teacher" counts for its original column "Mjob"
             counts[c] += any(name == c or name.startswith(c + "_") for name in kept)
     final = Pipeline(make_preprocessor(k)).fit(train, train.at_risk).named_steps["select"].get_feature_names_out()
+    # Mutual information of every encoded column on the full training set, ranked 1 (best) to 45.
+    encoded = Pipeline(make_preprocessor()).fit(train, train.at_risk).named_steps["encode"].transform(train)
+    mi = pd.Series(discrete_mi(encoded, train.at_risk), index=encoded.columns)
+    rank = mi.rank(ascending=False, method="min").astype(int)
     rows = []
     for c in FEATURES:
         numeric = c in NUMERIC + GRADES
         rho = train[c].corr(train.G3, method="spearman") if numeric else np.nan
         rates = train.groupby(c).at_risk.mean()  # for categoricals: gap between the riskiest and safest category
+        best = max((n for n in mi.index if n == c or n.startswith(c + "_")), key=mi.get)  # a one-hot feature's best column
         rows.append({"feature": c, "description": DESCRIPTIONS[c], "group": group[c],
                      "type": "grade" if c in GRADES else "numeric/ordinal" if numeric else "categorical",
                      "encoding": "standardised" if numeric else ("one 0/1 column" if train[c].nunique() == 2 else f"one-hot ({train[c].nunique()} columns)"),
                      "spearman_with_G3": rho, "at_risk_rate_gap": np.nan if numeric else rates.max() - rates.min(),
-                     "kept_in_folds": f"{counts[c]}/15", "in_final_model": any(n == c or n.startswith(c + "_") for n in final)})
+                     "mutual_information": mi[best], "mi_rank_of_45": rank[best], "kept_in_folds": f"{counts[c]}/15", "in_final_model": any(n == c or n.startswith(c + "_") for n in final)})
     return pd.DataFrame(rows).sort_values("kept_in_folds", key=lambda s: s.str.split("/").str[0].astype(int), ascending=False)
 
 
@@ -107,4 +113,5 @@ if __name__ == "__main__":
     data = load_data()
     audit(data)
     figures(data)
+    feature_audit(split(data)[0]).to_csv("results/feature_audit.csv", index=False)  # read by the app's Feature choices tab
     print(f"Figures saved to {FIG}/")

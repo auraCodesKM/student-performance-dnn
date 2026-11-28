@@ -225,6 +225,34 @@ data/student-por.csv  (649 rows, 33 columns)
   - *"Which features were removed during experiments?"* None by hand. SelectKBest re-chooses in every fit. The only change in the project's history is the switch from continuous to discrete MI, made because all inputs are discrete and the old selection was unstable.
   - *"Is discrete MI biased?"* The plug-in estimator slightly favours columns with many distinct values, such as absences with 23 values. Absences has a real but weak link to G3 (ρ = −0.14), so its selection is plausible, but this bias is a known limitation.
 
+**Defending every excluded input: the add-back / remove test** (`feature_ablation()` in `src/experiments.py`; notebook section 5; app "Feature choices" tab).
+- **What was tested.** Mutual information scores one column at a time, so the choice was checked with the model itself:
+  - each of the 22 unused inputs was **added** to the final 10, and each of the 10 used inputs **removed**, one at a time;
+  - every variant was scored on the same 15 CV folds (training students only), as a paired comparison.
+- **Noise floor.** The same 10-input model retrained with 5 random seeds gives CV macro-F1 between 0.843 and 0.860, a spread of 0.017. A feature change smaller than that cannot be told apart from re-running training.
+- **Result.**
+  - Removing **G2** (−0.111) or **G1** (−0.040) clearly hurts.
+  - Every other change, adding or removing, is between −0.004 and +0.025, inside or at the edge of the noise.
+  - The largest add-back change is age (+0.025, about 2.8 standard errors). With 32 tests, one borderline result is expected by chance.
+  - No input was added after seeing these results, because choosing inputs from the evaluation itself would be tuning on it.
+- **Conclusion.** Beyond G1 and G2 every attribute is weak. The top-10 rule gives the simplest model that performs as well as any variant, and every input's reason is listed in `REASONS` in `src/data.py` and shown in the app.
+- **Address in detail** (the question examiners ask most):
+  - Rural students are at risk more often: 21.3% vs 12.7%. But rural students also have lower grades (mean G2 10.8 vs 11.9), and 59% of them attend MS, while school is already a used input.
+  - **Among students with the same G2, the rate is almost the same:**
+
+    | G2 group | Rural at risk | Urban at risk |
+    |---|---|---|
+    | G2 ≤ 8 | 92% | 91% |
+    | G2 = 9 | 36% | 29% |
+    | G2 = 10 | 15% | 10% |
+    | G2 ≥ 11 | 0% | 0% |
+
+  - Address's apparent effect is therefore carried by the grades and the school. Its mutual information ranks 19 of 45, it is kept in 0 of 15 folds, and adding it back changes CV macro-F1 by +0.003.
+- **Examiner may ask:**
+  - *"Why didn't you use address?"* Give the rural/urban numbers, then the same-G2 table: once you know a student's grades and school, address tells you nothing new. Adding it back changed CV macro-F1 by +0.003, which is noise.
+  - *"Removing failures didn't hurt either. So why keep it?"* The selection rule was fixed in advance: keep the top 10 by mutual information, with k tuned by Optuna. Failures ranks 3rd and is the third-strongest single signal (9% vs 45% at risk). Individually it is partly redundant with G1/G2, as almost everything is. Hand-picking inputs from the ablation would be data snooping.
+  - *"Adding age helped. Why not add it?"* +0.025 is at the edge of seed noise and one of 32 tests. Age mostly reflects repeated years, which `failures` already captures. Adding it after seeing the test would be choosing features on the evaluation.
+
 ### D9. Splitting and leakage prevention
 - **What.**
   1. **Test split.** `train_test_split(test_size=0.2, stratify=at_risk, random_state=42)` gives 519 training and 130 test students. The test set is touched only in `evaluate.py`, after tuning.
@@ -650,3 +678,4 @@ The locked test set was scored once per version. Every change was driven by cros
 23. **What does the confusion matrix say?** 104 passes correct, 6 false alarms, 5 at-risk students missed, 15 caught.
 24. **What is ROC-AUC 0.953?** If you pick a random at-risk and a random passing student, the model ranks the at-risk one higher 95.3% of the time.
 25. **Why did the 91.2% from before change?** A methodological fix (discrete MI) and less noisy tuning, both decided on CV. The history is in section 7.
+26. **Why not use address, sex, alcohol, internet…?** Each was a candidate. On mutual information it ranked below the top 10, and adding it back changed CV macro-F1 by no more than retraining with a new seed does (0.017). For address: students with the same G2 fail at the same rate whether rural or urban. The full list is in the app's "Feature choices" tab.

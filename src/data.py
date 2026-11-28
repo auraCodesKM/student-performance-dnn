@@ -99,3 +99,44 @@ def make_preprocessor(k="all"):
     # Columns not listed (G3 and at_risk) are dropped by the transformer (remainder='drop'), so the target can't leak in.
     select = SelectKBest(discrete_mi, k=k)
     return [("encode", encode), ("select", select)]
+
+# Why each input is or is not used by the final model. Facts are from the 519 training students. The selection rule
+# (rank by mutual information, keep the top k = 10, k tuned by Optuna) was fixed before these reasons were written;
+# the notebook (section 5) and the app's "Feature choices" tab add the add-back / remove test for every input.
+REASONS = {
+    # ---- used (top 10 by mutual information) ----
+    "G2": "Strongest signal (rank 1 of 45). Removing it costs the most: CV macro-F1 drops by about 0.11.",
+    "G1": "Second strongest (rank 2). Students with G1 of 8 or less fail 81% of the time, with G1 of 11 or more almost never.",
+    "failures": "Rank 3. No past failures: 9% at risk; one failure: 45%; two or more: 57-64%.",
+    "school": "Rank 4. Mousinho da Silveira (MS) students are at risk 31% of the time vs 7% at Gabriel Pereira (GP).",
+    "higher": "Rank 5. Students who don't plan higher education are at risk 46% of the time vs 12% for those who do.",
+    "absences": "Rank 6. More than 10 absences: 24% at risk vs 14% with none. Disengagement adds to what grades show.",
+    "studytime": "Rank 7. Under 2 h/week: 26% at risk; over 10 h/week: 4%.",
+    "Fedu": "Rank 8. Father with only primary education: 27% at risk vs 10% with higher education.",
+    "Medu": "Rank 9. Mother with only primary education: 27% at risk vs 8% with higher education. Just inside the top 10.",
+    "famrel": "Rank 10, the last slot. Very bad family relations: 42% at risk (19 students) vs 10% for good. A weak signal.",
+    # ---- not used ----
+    "goout": "Rank 11, just below the cut-off. U-shaped: going out very little (24%) or a lot (26%) is riskier than the middle levels (about 11%). Its information ranks just below the top 10.",
+    "age": "Rank 12. Older students are at risk more mainly because they repeated years, which 'failures' already captures (students aged 19+ have about 1-3 past failures).",
+    "freetime": "Rank 13. Only the 'very high free time' group stands out (29% vs 9-16%). Weak once grades are known.",
+    "Walc": "Rank 14. Weekend drinking rises from 12% to 25% at risk, but the effect is small next to grades and overlaps workday drinking (r = 0.62).",
+    "reason": "Rank 15. 'Other' reason 27% vs 'reputation' 8%, but each category is small and the effect mostly reflects which school.",
+    "Mjob": "Rank 16. Mothers who are teachers: 5% at risk; this overlaps mother's education, which is already used.",
+    "Dalc": "Rank 17. Workday drinking is rare (only 15 students at level 5) and overlaps weekend drinking.",
+    "address": "Rank 19. Rural 21% vs urban 13% at risk, but rural students have lower G1/G2 and 59% attend MS (school is used). With the same G2, rural and urban students fail at almost the same rate, so grades and school already carry this.",
+    "traveltime": "Rank 22. Long travel is linked to rural address and school, which are already covered.",
+    "Fjob": "Rank 23. Fathers who are teachers: 4% at risk (only 26 students); overlaps father's education, which is used.",
+    "guardian": "Rank 24. Father 10%, mother 17%, other 21%: small differences, small groups.",
+    "romantic": "Rank 25. In a relationship 19% vs 13%: a weak link that disappears once grades are known.",
+    "internet": "Rank 26. No internet 21% vs 14%, but 'no internet' is far more common among rural students (34% vs 19%), so it largely repeats address/school.",
+    "activities": "Rank 27. Extra-curricular activities 13% vs 18%: weak.",
+    "sex": "Rank 28. Male 19% vs female 13%: weak. Not using it is also fairer, but it was dropped on evidence, not by hand.",
+    "health": "Rank 29. No consistent pattern (very bad 19%, good 12%, very good 17%).",
+    "famsup": "Rank 33. Family educational support 14% vs 17%: almost no difference.",
+    "famsize": "Rank 34. Families of 3 or fewer 13% vs larger 16%: almost no difference.",
+    "schoolsup": "Rank 36. Extra school support 13% vs 16%. Support is given to weaker students, so it is not a clean signal.",
+    "nursery": "Rank 38. Attended nursery 16% vs not 14%: no real difference.",
+    "Pstatus": "Rank 39. Parents apart 17% vs together 15%: no real difference.",
+    "paid": "Rank 41 (lowest). Paid classes 14% vs none 16%, and only 28 students took them.",
+}
+assert sorted(REASONS) == sorted(FEATURES)  # a reason for every input

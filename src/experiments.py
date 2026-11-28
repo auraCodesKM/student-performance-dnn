@@ -11,6 +11,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 import time
 
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
@@ -93,3 +94,49 @@ def summary(results):
         rows.append({"run": name, "best_val_loss": h["val"][best], "best_epoch": best + 1,
                      "val_acc_at_best": h["val_acc"][best], "final_val_loss": h["val"][-1], "seconds": h["seconds"]})
     return rows
+
+
+def feature_ablation(train, params, n_models=5):
+    """Paired CV test for every input, one at a time (training students only).
+
+    Baseline: the DNN on the 10 encoded columns of the final model. For each of the 10 used inputs we remove it,
+    and for each of the 22 unused inputs we add it back, then compare on the same 15 CV folds (5-fold x 3).
+    A change smaller than about 2 standard errors is noise. The baseline uses a fixed column list chosen on the
+    training set, so its CV score differs slightly from the per-fold-selection score in results/RESULTS.md.
+    """
+    from sklearn.compose import ColumnTransformer
+    from sklearn.model_selection import RepeatedStratifiedKFold, cross_validate
+
+    from src.data import FEATURES
+    from src.tune import build_dnn
+
+    encode = make_preprocessor()[0][1]
+    encoded = list(Pipeline([("encode", encode)]).fit(train).transform(train).columns)
+    final = list(Pipeline(make_preprocessor(params["k"])).fit(train, train["at_risk"])[-1].get_feature_names_out())
+    columns_of = {f: [c for c in encoded if c == f or c.startswith(f + "_")] for f in FEATURES}
+    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=7)
+
+    def scores(cols, seed=42):
+        dnn = build_dnn(params, n_models=n_models).steps[-1][1].set_params(seed=seed)
+        model = Pipeline([("encode", encode), ("keep", ColumnTransformer([("keep", "passthrough", cols)])), ("model", dnn)])
+        s = cross_validate(model, train, train["at_risk"], cv=cv, scoring=["accuracy", "f1_macro"], n_jobs=-1)
+        return s["test_accuracy"], s["test_f1_macro"]
+
+    base_acc, base_f1 = scores(final)
+    # Noise floor: the same 10 inputs retrained with 4 other seeds. Any feature change smaller than this spread
+    # is indistinguishable from simply re-running training.
+    seed_f1 = [base_f1.mean()] + [scores(final, seed)[1].mean() for seed in (100, 200, 300, 400)]
+    rows = []
+    for f in FEATURES:
+        used = any(c in final for c in columns_of[f])
+        cols = [c for c in final if c not in columns_of[f]] if used else final + columns_of[f]
+        acc, f1 = scores(cols)
+        d_acc, d_f1 = acc - base_acc, f1 - base_f1  # paired: same folds, so fold-to-fold noise cancels
+        rows.append({"feature": f, "in_model": used, "test": "removed" if used else "added",
+                     "delta_cv_accuracy": d_acc.mean(), "delta_cv_f1_macro": d_f1.mean(),
+                     "se_f1": d_f1.std(ddof=1) / np.sqrt(len(d_f1))})
+        print(f"  {f:11s} {'removed' if used else 'added  '}  Δacc {d_acc.mean():+.3f}  ΔF1 {d_f1.mean():+.3f} ± {rows[-1]['se_f1']:.3f}", flush=True)
+    out = pd.DataFrame(rows)
+    out.attrs["baseline"] = {"cv_accuracy": base_acc.mean(), "cv_f1_macro": base_f1.mean(), "seed_cv_f1_macro": seed_f1,
+                             "seed_f1_range": max(seed_f1) - min(seed_f1)}
+    return out

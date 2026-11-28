@@ -1,4 +1,4 @@
-# Streamlit demo script (about 6 minutes)
+# Streamlit demo script (about 7 minutes)
 
 What to show in the viva, in order, with the exact inputs to set and the result you will see.
 Every number below was checked against the saved model (`models/dnn.joblib`).
@@ -96,7 +96,17 @@ Click **Model performance**.
    > "Same preprocessing and the same cross-validation for every model. The DNN has the best test accuracy, 91.5% against 90.0% for logistic regression, XGBoost and the G2 rule. But in cross-validation logistic regression is slightly ahead, and McNemar's test shows the differences are not statistically significant. My honest conclusion: the DNN matches the best traditional models; it does not clearly beat them. With the period grades known, about 92% is the ceiling for this data."
 4. **The architecture line**: 10 → 16 → 8 → 1, BatchNorm, ReLU, Dropout, He initialisation, AdamW, early stopping, an average of 5 networks.
 
-## Step 9: the About tab (15 s)
+## Step 9: the Feature choices tab (1 min, or whenever sir asks "why not feature X?")
+
+Click **Feature choices**. The lookup box opens on **address**.
+
+> "All 32 inputs were candidates. On the training students only, I ranked every column by mutual information and kept the top 10; Optuna chose 10 over 15, 20 or all 45. Then I checked the choice: I added each unused input back, and removed each used one, on the same 15 cross-validation folds.
+> Retraining the same model with a different random seed already moves the score by 0.017, and only removing G1 or G2 changes it by more than that.
+> Address, for example: rural students do fail more, 21% vs 13%. But they also have lower grades and most attend MS. Among students with the same G2, rural and urban fail at the same rate, so the grades and school already carry that information. Adding address back changed the score by +0.003."
+
+Pick any other input sir names (sex, alcohol, internet…) and read its card. Every input also has a **(?) tooltip** on the Predict form with the same reason.
+
+## Step 10: the About tab (15 s)
 
 > "Dataset source and licence, method in one paragraph, and a responsible-use note. The inputs include sensitive attributes such as sex and family situation, so this should start a conversation with a student, never make a decision about them."
 
@@ -110,7 +120,7 @@ Click **Model performance**.
 | *How do you make sure the app's preprocessing matches training?* | `models/dnn.joblib` is the **whole fitted Pipeline**: the one-hot encoder's categories, the scaler's mean and std, the selected columns and the 5 networks. The input row is ordered with `[FEATURES]`, the training column order. Nothing is refitted. |
 | *Why is the probability 52% "at risk" but 46% "pass"?* | The decision cut-off is 0.5. Near the cut-off the app shows "treat as uncertain". Notebook section 10 shows how a lower cut-off would catch more at-risk students at the cost of more false alarms. |
 | *What does the 'Why' panel compute?* | Occlusion: for each input the model uses that differs from the typical value, it sets that one input back to typical and records the change in P(fail). |
-| *Why does the model ignore alcohol, health and so on?* | Feature selection (mutual information, inside the pipeline) kept the 10 most informative columns. Alcohol and health have weak links to G3 (rank correlation magnitude ≤ 0.2), so they lose to the grades. |
+| *Why does the model ignore address, alcohol, health and so on?* | Open the **Feature choices** tab and look the input up. Each one ranked below the top 10 by mutual information, and adding it back changed CV macro-F1 by less than the 0.017 seed-to-seed noise. Only G1 and G2 change the result when removed. |
 | *What if G1 and G2 are not known yet?* | That is the supplementary "no grades" experiment: without them no model beats predicting "pass" for everyone (84.6%). The grades carry most of the signal. |
 | *Can it run online?* | Yes. `streamlit run app.py` locally, or deploy to Streamlit Community Cloud from the GitHub repo (not done, because it is not required). |
 
